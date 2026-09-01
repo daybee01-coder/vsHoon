@@ -32,3 +32,4 @@ node scripts/adopt-core-deps.mjs <path to the old checkout>
 VShoon is based on the open-source Code - OSS repository. It does not reuse Microsoft Visual
 Studio Code trademarks, icons, binaries, Marketplace entitlements, update services, or telemetry
 endpoints. Upstream and third-party license notices are preserved.
+"# vsHoon" 
