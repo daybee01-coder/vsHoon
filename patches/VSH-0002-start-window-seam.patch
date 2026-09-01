@@ -1,0 +1,80 @@
+diff --git a/src/vs/code/electron-main/app.ts b/src/vs/code/electron-main/app.ts
+index c9736ff355fa..7f21bb491980 100644
+--- a/src/vs/code/electron-main/app.ts
++++ b/src/vs/code/electron-main/app.ts
+@@ -147,6 +147,10 @@ import { NativeWebContentExtractorService } from '../../platform/webContentExtra
+ import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
+ import { ITerminalSandboxService, NullTerminalSandboxService } from '../../platform/sandbox/common/terminalSandboxService.js';
+ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
++import { evaluateVShoonStartWindow } from '../../vshoon/common/startWindowPolicy.js';
++import { toVShoonLaunchRequest } from '../../vshoon/node/launchRequest.js';
++import { VShoonLaunchMainService } from '../../vshoon/electron-main/launchMainService.js';
++import { IVShoonStartWindowMainService, VShoonStartWindowMainService } from '../../vshoon/electron-main/startWindowMainService.js';
+ 
+ type OSProxyConfigEvent = {
+ 	readonly success: boolean;
+@@ -1209,6 +1213,9 @@ export class CodeApplication extends Disposable {
+ 		// Launch
+ 		services.set(ILaunchMainService, new SyncDescriptor(LaunchMainService, undefined, false /* proxied to other processes */));
+ 
++		// VShoon start window
++		services.set(IVShoonStartWindowMainService, new SyncDescriptor(VShoonStartWindowMainService));
++
+ 		// Diagnostics
+ 		services.set(IDiagnosticsMainService, new SyncDescriptor(DiagnosticsMainService, undefined, false /* proxied to other processes */));
+ 		services.set(IDiagnosticsService, ProxyChannel.toService(getDelayedChannel(sharedProcessReady.then(client => client.getChannel('diagnostics')))));
+@@ -1337,7 +1344,10 @@ export class CodeApplication extends Disposable {
+ 
+ 		const disposables = this._register(new DisposableStore());
+ 
+-		const launchChannel = ProxyChannel.fromService(accessor.get(ILaunchMainService), disposables, { disableMarshalling: true });
++		// VShoon: a second instance must not open an empty workbench window while the start
++		// window still owns the launch, so the launch service is wrapped before it is exposed.
++		const launchMainService = new VShoonLaunchMainService(accessor.get(ILaunchMainService), accessor.get(IVShoonStartWindowMainService), this.logService);
++		const launchChannel = ProxyChannel.fromService(launchMainService, disposables, { disableMarshalling: true });
+ 		this.mainProcessNodeIpcServer.registerChannel('launch', launchChannel);
+ 
+ 		const diagnosticsChannel = ProxyChannel.fromService(accessor.get(IDiagnosticsMainService), disposables, { disableMarshalling: true });
+@@ -1485,6 +1495,34 @@ export class CodeApplication extends Disposable {
+ 
+ 		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
+ 		const args = this.environmentMainService.args;
++		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];
++		const launchRequest = toVShoonLaunchRequest(args);
++		const startWindowDecision = evaluateVShoonStartWindow({
++			...launchRequest,
++			enabled: this.productService.applicationName === 'vshoon',
++			initialStartup: true,
++			desktopLaunch: context === OpenContext.DESKTOP,
++			hasExplicitTarget: launchRequest.hasExplicitTarget || macOpenFiles.length > 0,
++			hasProtocolUrl: launchRequest.hasProtocolUrl || (!!initialProtocolUrls && (initialProtocolUrls.openables.length > 0 || initialProtocolUrls.urls.length > 0))
++		});
++
++		// This is the single integration seam for the start-window lifecycle.
++		this.logService.trace('vshoon#startWindowDecision', startWindowDecision);
++		if (startWindowDecision.show) {
++			const startWindowMainService = accessor.get(IVShoonStartWindowMainService);
++			const action = await startWindowMainService.show();
++			if (action === 'quit') {
++				await this.lifecycleMainService.quit();
++				return [];
++			}
++
++			// A second instance opened a workbench window while the start window was showing.
++			if (action === 'superseded') {
++				return [];
++			}
++
++			startWindowMainService.releaseWhenWorkbenchOpens();
++		}
+ 
+ 		// Handle agents window first based on context
+ 		if (args['agents']) {
+@@ -1544,7 +1582,6 @@ export class CodeApplication extends Disposable {
+ 			}
+ 		}
+ 
+-		const macOpenFiles: string[] = (global as { macOpenFiles?: string[] }).macOpenFiles ?? [];
+ 		const hasCliArgs = args._.length;
+ 		const hasFolderURIs = !!args['folder-uri'];
+ 		const hasFileURIs = !!args['file-uri'];

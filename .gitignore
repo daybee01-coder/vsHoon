@@ -1,0 +1,14 @@
+# Code - OSS core checkout. Restored by `npm run sync`, never committed.
+/.core/
+
+# Generated agent assets that mirror files owned by the core.
+/.claude/CLAUDE.md
+/.claude/skills
+
+node_modules/
+/out*/
+.build/
+.tmp/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

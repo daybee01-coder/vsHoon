@@ -1,0 +1,5 @@
+# Match the core: sources are LF everywhere so patches apply on every platform.
+* text=auto eol=lf
+
+# Patches are applied byte for byte and must never be rewritten by Git.
+*.patch -text

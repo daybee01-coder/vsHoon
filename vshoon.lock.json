@@ -1,0 +1,17 @@
+{
+	"$comment": "Pins the Code - OSS core that VShoon builds against. Update with `npm run core:bump`.",
+	"upstream": {
+		"repository": "https://github.com/microsoft/vscode.git",
+		"commit": "6b606c6c85f184ce581f4d898e590a093e213ba3",
+		"version": "1.137.0",
+		"committedAt": "2026-09-01T00:43:09Z"
+	},
+	"overlay": [
+		"src/vs/vshoon"
+	],
+	"patches": [
+		"VSH-0001-product-identity.patch",
+		"VSH-0002-start-window-seam.patch",
+		"VSH-0003-source-layers.patch"
+	]
+}

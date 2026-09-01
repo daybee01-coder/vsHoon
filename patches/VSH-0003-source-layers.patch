@@ -1,0 +1,73 @@
+diff --git a/eslint.config.js b/eslint.config.js
+index b9221655462a..12aa3fa21fcc 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -1907,6 +1907,7 @@ export default defineConfig(
+ 						'vs/editor/~',
+ 						'vs/editor/contrib/*/~',
+ 						'vs/code/~',
++						'vs/vshoon/~',
+ 						{
+ 							'when': 'hasBrowser',
+ 							'pattern': 'vs/workbench/workbench.web.main.js'
+@@ -1936,6 +1937,60 @@ export default defineConfig(
+ 						'vs/sessions/sessions.desktop.main.js'
+ 					]
+ 				},
++				{
++					'target': 'src/vs/vshoon/~',
++					'restrictions': [
++						'vs/base/~',
++						'vs/base/parts/*/~',
++						'vs/platform/*/~',
++						'vs/code/~',
++						'vs/vshoon/~'
++					]
++				},
++				{
++					'target': 'src/vs/vshoon/*/~',
++					'restrictions': [
++						'vs/base/~',
++						'vs/base/parts/*/~',
++						'vs/platform/*/~',
++						'vs/code/~',
++						'vs/vshoon/~',
++						'vs/vshoon/*/~'
++					]
++				},
++				{
++					'target': 'src/vs/vshoon/*/*/~',
++					'restrictions': [
++						'vs/base/~',
++						'vs/base/parts/*/~',
++						'vs/platform/*/~',
++						'vs/code/~',
++						'vs/vshoon/~',
++						'vs/vshoon/*/~',
++						'vs/vshoon/*/*/~'
++					]
++				},
++				{
++					'target': 'src/vs/vshoon/electron-sandbox/startWindow/~',
++					'restrictions': [
++						'vs/base/~',
++						'vs/base/parts/*/~',
++						'vs/platform/*/~',
++						'vs/code/~',
++						'vs/vshoon/~',
++						'vs/vshoon/*/~',
++						'vs/vshoon/electron-sandbox/startWindow/~'
++					]
++				},
++				{
++					'target': 'src/vs/vshoon/electron-sandbox/startWindow/startWindow.ts',
++					'layer': 'electron-browser',
++					'restrictions': [
++						'vs/base/~',
++						'vs/platform/*/~',
++						'vs/vshoon/~'
++					]
++				},
+ 				{
+ 					'target': 'src/vs/server/~',
+ 					'restrictions': [
