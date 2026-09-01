@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { existsSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { coreDir, fail, readLock } from './core-paths.mjs';
 
@@ -28,20 +28,36 @@ if (!existsSync(join(coreDir, 'package.json'))) {
 assertSameCore();
 
 const moved = [];
+const skipped = [];
 for (const entry of collectEntries()) {
 	const from = join(source, entry);
 	const to = join(coreDir, entry);
-	if (!existsSync(from) || existsSync(to)) {
+	if (!existsSync(from)) {
 		continue;
 	}
 
-	renameSync(from, to);
+	if (existsSync(to)) {
+		skipped.push(entry);
+		continue;
+	}
+
+	move(from, to);
 	moved.push(entry);
 }
 
 console.log(`[vshoon] adopted ${moved.length} directories from ${source}`);
 for (const entry of moved) {
 	console.log(`  ${entry}`);
+}
+
+if (skipped.length > 0) {
+	console.warn('');
+	console.warn('[vshoon] left alone because the core already has them:');
+	for (const entry of skipped) {
+		console.warn(`  ${entry}`);
+	}
+	console.warn('Delete them from the core and run this again if they are incomplete.');
+	console.warn('');
 }
 
 /** Refuses to mix trees that were installed from a different core version. */
@@ -67,4 +83,19 @@ function collectEntries() {
 	}
 
 	return entries;
+}
+
+/** Renames when both trees share a volume and falls back to a copy when they do not. */
+function move(from, to) {
+	try {
+		renameSync(from, to);
+	} catch (error) {
+		if (error.code !== 'EXDEV') {
+			throw error;
+		}
+
+		console.log(`  copying across volumes, this is slower: ${from}`);
+		cpSync(from, to, { recursive: true });
+		rmSync(from, { recursive: true, force: true });
+	}
 }
