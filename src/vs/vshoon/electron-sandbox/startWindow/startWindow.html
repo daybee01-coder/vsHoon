@@ -20,18 +20,25 @@
 			<section class="workspace" aria-labelledby="recent-title">
 				<div class="section-heading">
 					<h2 id="recent-title">최근 프로젝트</h2>
-					<span>다음 단계에서 프로젝트 목록이 연결됩니다.</span>
+					<span id="recent-count"></span>
 				</div>
-				<div class="empty-state">
-					<strong>아직 표시할 프로젝트가 없습니다.</strong>
-					<p>현재는 시작 창의 안전한 수명주기를 먼저 구성하고 있습니다.</p>
+
+				<ul id="recent-list" class="recent-list" aria-labelledby="recent-title"></ul>
+
+				<div id="empty-state" class="empty-state" hidden>
+					<strong>아직 열어본 프로젝트가 없습니다.</strong>
+					<p>아래에서 폴더나 워크스페이스를 열면 여기에 쌓입니다.</p>
 				</div>
 			</section>
 
 			<footer class="actions">
 				<button id="quit" class="secondary" type="button">종료</button>
-				<button id="continue" class="primary" type="button" autofocus>VShoon 열기</button>
+				<button id="open-empty" class="secondary" type="button">빈 창</button>
+				<button id="open-workspace" class="secondary" type="button">워크스페이스 열기</button>
+				<button id="open-folder" class="primary" type="button" autofocus>폴더 열기</button>
 			</footer>
+
+			<p id="status" class="status" role="status" aria-live="polite"></p>
 		</main>
 		<script type="module" src="./startWindow.js"></script>
 	</body>

@@ -91,7 +91,37 @@ configurations sit behind it in the dropdown.
 
 ## IPC Contract
 
-The renderer receives a serialized, display-only recent-item model. It may request only enumerated actions: open recent, remove recent, pin/unpin, choose folder, choose workspace, open empty window, or close. Main process code validates item IDs and resolves them back to service-owned objects; arbitrary paths or command names are not accepted without validation.
+One `invoke` channel, `vscode:vshoonStartWindow`, carries an enumerated request and returns a
+display-only model. The preload exposes `send` and `invoke` but no `on`, so the renderer pulls;
+requests that change the list return the new one rather than pushing an update.
+
+| Request | Returns |
+| --- | --- |
+| `projects` | the recent list |
+| `togglePin`, `removeRecent` | the recent list, updated |
+| `openRecent`, `chooseFolder`, `chooseWorkspace`, `openEmpty` | opens a window |
+| `quit` | closes the launcher, which ends the session |
+
+Anything else is refused before it reaches a handler. An `id` names an entry in the model the
+renderer was last given; the main process resolves it against that list, so a path the renderer
+invents is not a path the main process will open.
+
+Pins are VShoon state, not upstream state: `IRecentlyOpened` has no pinned concept, so the ids
+live under `vshoon.startWindow.pinnedProjects` in `IStateService` and are overlaid onto the
+upstream list at read time. Pinned entries keep the order they were pinned in, so the shortlist
+a user arranges does not reshuffle as projects are opened.
+
+## The Launcher Must Not Block Startup
+
+`show()` resolves when the window has loaded, not when the user chooses. That is a constraint,
+not a preference: application storage only initializes at `LifecycleMainPhase.AfterWindowOpen`
+(`storageMainService.ts`), and `CodeApplication` sets that phase *after* `openFirstWindow`
+returns. A launcher that waits for input inside that call deadlocks the moment it reads the
+recent list, because `getRecentlyOpened()` awaits storage that startup has not reached yet.
+
+So the seam hands the rest of the launch to the launcher and returns. The launcher opens the
+workbench itself through `IWindowsMainService`, and closing it without choosing anything calls
+`ILifecycleMainService.quit()`.
 
 ## Current Lifecycle Note
 

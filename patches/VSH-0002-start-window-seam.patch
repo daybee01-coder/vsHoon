@@ -1,5 +1,5 @@
 diff --git a/src/vs/code/electron-main/app.ts b/src/vs/code/electron-main/app.ts
-index c9736ff355fa..7f21bb491980 100644
+index c9736ff355fa..6ec37e5c9408 100644
 --- a/src/vs/code/electron-main/app.ts
 +++ b/src/vs/code/electron-main/app.ts
 @@ -147,6 +147,10 @@ import { NativeWebContentExtractorService } from '../../platform/webContentExtra
@@ -35,7 +35,7 @@ index c9736ff355fa..7f21bb491980 100644
  		this.mainProcessNodeIpcServer.registerChannel('launch', launchChannel);
  
  		const diagnosticsChannel = ProxyChannel.fromService(accessor.get(IDiagnosticsMainService), disposables, { disableMarshalling: true });
-@@ -1485,6 +1495,34 @@ export class CodeApplication extends Disposable {
+@@ -1485,6 +1495,28 @@ export class CodeApplication extends Disposable {
  
  		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
  		const args = this.environmentMainService.args;
@@ -53,24 +53,18 @@ index c9736ff355fa..7f21bb491980 100644
 +		// This is the single integration seam for the start-window lifecycle.
 +		this.logService.trace('vshoon#startWindowDecision', startWindowDecision);
 +		if (startWindowDecision.show) {
-+			const startWindowMainService = accessor.get(IVShoonStartWindowMainService);
-+			const action = await startWindowMainService.show();
-+			if (action === 'quit') {
-+				await this.lifecycleMainService.quit();
-+				return [];
-+			}
 +
-+			// A second instance opened a workbench window while the start window was showing.
-+			if (action === 'superseded') {
-+				return [];
-+			}
++			// The launcher owns the rest of this launch: it opens the workbench itself once the
++			// user chooses. Startup continues so that later phases, and the application storage
++			// the recent list needs, are not held back by a window waiting for input.
++			await accessor.get(IVShoonStartWindowMainService).show();
 +
-+			startWindowMainService.releaseWhenWorkbenchOpens();
++			return [];
 +		}
  
  		// Handle agents window first based on context
  		if (args['agents']) {
-@@ -1544,7 +1582,6 @@ export class CodeApplication extends Disposable {
+@@ -1544,7 +1576,6 @@ export class CodeApplication extends Disposable {
  			}
  		}
  
