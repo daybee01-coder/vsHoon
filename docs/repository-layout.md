@@ -51,6 +51,33 @@ transpiles first for the same reason. `npm run watch` mirrors continuously for a
 files directly under `.core/src/vs/vshoon` is a mistake; the next mirror overwrites them and
 prints the paths it clobbered.
 
+## Debugging
+
+The build runs inside the core, so the transpiled output and its source maps name the overlay
+copy:
+
+```
+.core/out/vs/vshoon/node/launchRequest.js
+  sources: [ "D:\...\.core\src\vs\vshoon\node\launchRequest.ts" ]
+```
+
+Left alone, a breakpoint set in `src/vs/vshoon` would never bind, because the debugger resolves
+a different file. `.vscode/launch.json` closes the gap with a `sourceMapPathOverrides` entry per
+overlay path:
+
+```json
+"sourceMapPathOverrides": {
+    "${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+}
+```
+
+So breakpoints belong in `src/vs/vshoon`, the same files you edit. `npm run sync` warns when an
+`overlay` entry has no matching override, because an unbound breakpoint is quiet and easy to
+misread as code that never ran.
+
+Core sources need no override: `.core/src` is where they genuinely live, so break there
+directly.
+
 ## Modified core files are patches
 
 VShoon owns three edits to core files. They are stored as patches, applied by `npm run sync`

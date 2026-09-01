@@ -1,0 +1,54 @@
+{
+	// The build runs inside .core, so the transpiled output and its source maps refer to the
+	// overlay copy at .core/src/vs/vshoon. `sourceMapPathOverrides` maps that back to the
+	// sources you actually edit, so breakpoints belong in src/vs/vshoon, never in .core.
+	//
+	// Keep the overrides in step with the `overlay` list in vshoon.lock.json. `npm run sync`
+	// warns when an overlay entry has no override here.
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Main Process",
+			"attachSimplePort": 5875,
+			"enableContentValidation": false,
+			"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.sh",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.bat"
+			},
+			"runtimeArgs": [
+				"--inspect-brk=5875",
+				"--no-cached-data"
+			],
+			"outFiles": [
+				"${workspaceFolder}/.core/out/**/*.js"
+			],
+			"sourceMapPathOverrides": {
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+			},
+			"presentation": {
+				"group": "1_vshoon",
+				"order": 1
+			}
+		},
+		{
+			"type": "node",
+			"request": "attach",
+			"name": "VShoon: Attach to Main Process",
+			"timeout": 30000,
+			"port": 5875,
+			"continueOnAttach": true,
+			"outFiles": [
+				"${workspaceFolder}/.core/out/**/*.js"
+			],
+			"sourceMapPathOverrides": {
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+			},
+			"presentation": {
+				"group": "1_vshoon",
+				"order": 2
+			}
+		}
+	]
+}

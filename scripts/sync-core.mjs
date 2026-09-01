@@ -19,6 +19,7 @@ resetToPinnedCommit();
 applyPatches();
 mirrorOverlay();
 mirrorAgentAssets();
+checkDebugOverrides();
 
 console.log(`\n[vshoon] core is ready. Build from it with \`npm run core -- run <script>\`.`);
 
@@ -172,4 +173,34 @@ function remove(path) {
 	}
 
 	rmSync(path, { recursive: true, force: true });
+}
+
+/**
+ * Warns when a debug configuration cannot map the overlay back to the sources you edit.
+ *
+ * The build runs inside the core, so source maps point at the overlay copy. Without a matching
+ * `sourceMapPathOverrides` entry a breakpoint set in this repository silently never binds, which
+ * is far harder to notice than an error.
+ */
+function checkDebugOverrides() {
+	const launchFile = join(repoRoot, '.vscode', 'launch.json');
+	if (!existsSync(launchFile)) {
+		return;
+	}
+
+	const contents = readFileSync(launchFile, 'utf8');
+	const missing = lock.overlay.filter(entry => !contents.includes(`/.core/${entry.split(sep).join('/')}/*`));
+	if (missing.length === 0) {
+		return;
+	}
+
+	console.warn('');
+	console.warn('[vshoon] .vscode/launch.json cannot map these overlay paths back to this repository:');
+	for (const entry of missing) {
+		const path = entry.split(sep).join('/');
+		console.warn(`  "\${workspaceFolder}/.core/${path}/*": "\${workspaceFolder}/${path}/*"`);
+	}
+
+	console.warn('Breakpoints in those sources will not bind until the override is added.');
+	console.warn('');
 }
