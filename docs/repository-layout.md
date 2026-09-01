@@ -75,6 +75,20 @@ So breakpoints belong in `src/vs/vshoon`, the same files you edit. `npm run sync
 `overlay` entry has no matching override, because an unbound breakpoint is quiet and easy to
 misread as code that never ran.
 
+This is verified against a running build: with the override in place, js-debug emits
+
+```json
+{"event":"breakpoint","body":{"reason":"changed","breakpoint":{
+    "verified": true,
+    "source": {"path": "d:\project\vscode\vsHoon\src\vs\vshoon\node\launchRequest.ts"}}}}
+```
+
+— bound to the edited source, not to the overlay copy.
+
+One caveat if you drive the debugger from a CLI rather than from VS Code: `${workspaceFolder}`
+is resolved by VS Code itself, and a standalone js-debug adapter rejects the configuration with
+`Unable to resolve ${workspaceFolder}`. Pass the same fields with absolute paths in that case.
+
 Core sources need no override: `.core/src` is where they genuinely live, so break there
 directly.
 
