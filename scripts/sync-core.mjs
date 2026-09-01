@@ -36,6 +36,12 @@ function fetchCore() {
 		git(['config', 'core.autocrlf', 'false']);
 		git(['config', 'core.eol', 'lf']);
 
+		// GIT_LFS_SKIP_SMUDGE only covers git run through this script. Disabling the smudge
+		// filter in the core's own config makes it stick for any git command anyone runs
+		// there, so the ~271 MB of LFS fixtures stay pointer files.
+		git(['config', 'filter.lfs.smudge', 'git-lfs smudge --skip -- %f']);
+		git(['config', 'filter.lfs.process', 'git-lfs filter-process --skip']);
+
 		// The overlay and installed dependencies live inside the core but are not part of it.
 		const excludes = [...lock.overlay, 'node_modules', 'out', '.build'].map(entry => `/${entry}`);
 		appendFileSync(join(coreDir, '.git', 'info', 'exclude'), `\n# VShoon\n${excludes.join('\n')}\n`);
