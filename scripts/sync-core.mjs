@@ -30,6 +30,12 @@ function fetchCore() {
 		git(['init', '--quiet']);
 		git(['remote', 'add', 'origin', repository]);
 
+		// Git for Windows enables autocrlf system wide. Left on, the core working tree is
+		// CRLF and every generated patch carries CRLF, which then fails to apply on an LF
+		// checkout. Pinning it here keeps patches identical on every platform.
+		git(['config', 'core.autocrlf', 'false']);
+		git(['config', 'core.eol', 'lf']);
+
 		// The overlay and installed dependencies live inside the core but are not part of it.
 		const excludes = [...lock.overlay, 'node_modules', 'out', '.build'].map(entry => `/${entry}`);
 		appendFileSync(join(coreDir, '.git', 'info', 'exclude'), `\n# VShoon\n${excludes.join('\n')}\n`);
