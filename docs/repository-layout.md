@@ -46,7 +46,8 @@ indistinguishable from core sources to every tool.
 
 To keep the copy from going stale, `scripts/core-exec.mjs` mirrors the overlay before it hands
 any command to the core, so `npm run typecheck`, `npm test` and `npm run compile` always build
-the current sources. `npm run watch` mirrors continuously for an edit-and-reload loop. Editing
+the current sources. The unit tests read `.core/out` rather than the sources, so `npm test`
+transpiles first for the same reason. `npm run watch` mirrors continuously for an edit-and-reload loop. Editing
 files directly under `.core/src/vs/vshoon` is a mistake; the next mirror overwrites them and
 prints the paths it clobbered.
 
@@ -77,7 +78,7 @@ and run `npm run patch:save`, which rewrites each patch from the core working tr
 | `npm run compile` | `compile` in the core |
 | `npm run lint` | ESLint over `src/vs/vshoon` |
 | `npm run layers` | `valid-layers-check` in the core |
-| `npm test` | VShoon unit tests in the core |
+| `npm test` | Transpile, then run the VShoon unit tests in the core |
 | `npm run watch` | Mirror the overlay on every change |
 | `npm run patch:save` | Rewrite the patches from the core working tree |
 

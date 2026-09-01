@@ -13,6 +13,7 @@
 		"compile": "node scripts/core-exec.mjs run compile",
 		"lint": "node scripts/core-exec.mjs exec -- eslint src/vs/vshoon",
 		"layers": "node scripts/core-exec.mjs run valid-layers-check",
+		"pretest": "node scripts/core-exec.mjs run transpile-client",
 		"test": "node scripts/core-exec.mjs exec -- mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit --runGlob \"**/vshoon/test/**/*.test.js\"",
 		"watch": "node scripts/overlay.mjs --watch"
 	}
