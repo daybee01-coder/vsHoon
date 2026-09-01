@@ -158,6 +158,7 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 - 빌드와 검사는 `.core`에서 직접 실행하지 말고 저장소 루트의 npm 스크립트로 실행한다. 이 스크립트들이 오버레이를 먼저 미러링하므로 오래된 소스로 빌드되는 일이 없다. 명령 목록은 [docs/repository-layout.md](docs/repository-layout.md)에 있다.
 - 코어가 없거나 오래되었으면 먼저 `npm run sync`를 실행한다.
 - 제품을 실행하거나 디버깅하기 전에 `npm run build`를 실행한다. `typecheck`와 `test`는 `src/`만 보므로, 내장 확장이 컴파일되지 않은 트리에서도 통과한다.
+- 시작 창을 디버깅할 때는 `VShoon: Start Window (desktop launch)` 구성을 쓴다. `scripts/code.bat`은 `VSCODE_CLI=1`을 설정하므로 정책이 `notDesktopLaunch`로 우회한다.
 - 브레이크포인트는 `src/vs/vshoon`에 건다. `.vscode/launch.json`의 `sourceMapPathOverrides`가 오버레이 복사본을 이 저장소의 소스로 되돌려 매핑한다.
 - upstream이 고정한 Node 버전과 패키지 도구를 사용한다.
 - 사용자에게 보이는 문자열은 upstream 현지화 체계를 사용한다.

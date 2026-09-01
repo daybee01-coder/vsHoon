@@ -64,6 +64,22 @@ keep the start window alive for the whole editing session.
 `--status` and other diagnostics never reach the launch service, and `getMainProcessId()` is
 delegated unchanged so that the Windows foreground handshake keeps working.
 
+## Debugging the Launcher
+
+`scripts/code.bat` and `code.sh` export `VSCODE_CLI=1`, which `isLaunchedFromCli` reports as a
+CLI launch, so the policy bypasses the launcher with `notDesktopLaunch`. Every debug
+configuration routed through those scripts therefore opens the workbench directly, no matter
+what the rest of the launch looks like:
+
+| Launch | Decision |
+| --- | --- |
+| Electron binary, no `VSCODE_CLI` | `{ show: true }` |
+| Same binary with `VSCODE_CLI=1` | `{ show: false, reason: 'notDesktopLaunch' }` |
+
+That is the policy working as specified, not a defect. To debug the launcher, use the
+**VShoon: Start Window (desktop launch)** configuration, which runs the Electron binary directly
+and unsets `VSCODE_CLI`, reproducing what happens when a desktop user opens the product.
+
 ## Service Reuse
 
 - `IWorkspacesHistoryMainService.getRecentlyOpened()` supplies recent entries.
