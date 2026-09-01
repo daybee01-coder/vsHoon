@@ -76,9 +76,10 @@ what the rest of the launch looks like:
 | Electron binary, no `VSCODE_CLI` | `{ show: true }` |
 | Same binary with `VSCODE_CLI=1` | `{ show: false, reason: 'notDesktopLaunch' }` |
 
-That is the policy working as specified, not a defect. To debug the launcher, use the
-**VShoon: Start Window (desktop launch)** configuration, which runs the Electron binary directly
-and unsets `VSCODE_CLI`, reproducing what happens when a desktop user opens the product.
+That is the policy working as specified, not a defect. **VShoon: Start Window (desktop launch)**
+runs the Electron binary directly with `VSCODE_CLI` unset, reproducing what a desktop user gets.
+It is the first configuration in `launch.json`, so plain F5 reaches the launcher; the workbench
+configurations sit behind it in the dropdown.
 
 ## Service Reuse
 

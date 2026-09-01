@@ -8,31 +8,6 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"type": "node",
-			"request": "launch",
-			"name": "VShoon: Main Process",
-			"attachSimplePort": 5875,
-			"enableContentValidation": false,
-			"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.sh",
-			"windows": {
-				"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.bat"
-			},
-			"runtimeArgs": [
-				"--inspect-brk=5875",
-				"--no-cached-data"
-			],
-			"outFiles": [
-				"${workspaceFolder}/.core/out/**/*.js"
-			],
-			"sourceMapPathOverrides": {
-				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
-			},
-			"presentation": {
-				"group": "1_vshoon",
-				"order": 1
-			}
-		},
-		{
 			// scripts/code.bat sets VSCODE_CLI=1, which the start-window policy reads as a CLI
 			// launch and bypasses on purpose. Debugging the start window means launching the way
 			// a desktop user does: the Electron binary directly, with no VSCODE_CLI and no target.
@@ -54,6 +29,31 @@
 				"VSCODE_DEV": "1",
 				"VSCODE_CLI": null
 			},
+			"outFiles": [
+				"${workspaceFolder}/.core/out/**/*.js"
+			],
+			"sourceMapPathOverrides": {
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+			},
+			"presentation": {
+				"group": "1_vshoon",
+				"order": 1
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Main Process",
+			"attachSimplePort": 5875,
+			"enableContentValidation": false,
+			"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.sh",
+			"windows": {
+				"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.bat"
+			},
+			"runtimeArgs": [
+				"--inspect-brk=5875",
+				"--no-cached-data"
+			],
 			"outFiles": [
 				"${workspaceFolder}/.core/out/**/*.js"
 			],
