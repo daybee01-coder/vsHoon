@@ -13,7 +13,22 @@ npm run sync                 # fetch the pinned core, apply patches, mirror the 
 npm run core -- install      # install the core's dependencies (once, ~7 GB)
 npm run typecheck            # verify
 npm test                     # VShoon unit tests
+npm run build                # compile the client AND the built-in extensions
 ```
+
+`npm run build` is required before running the product, including from the debugger. The
+type checks and the unit tests only read `src/`, so they pass against a tree whose built-in
+extensions were never compiled — and that tree then fills the console with extension load
+failures the moment it launches.
+
+### Host requirements
+
+- **Node.js matching the core's `.nvmrc`** (currently 24.18.0 or newer, same major). An older
+  runtime stops `npm install` in `preinstall`. `VSCODE_SKIP_NODE_VERSION_CHECK=1` gets past it
+  but is not a fix.
+- **A C/C++ toolchain** (Visual Studio Build Tools on Windows) for the core's native modules —
+  `spdlog`, `node-pty`, `native-watchdog`. Without it the product still starts, but logging is
+  degraded and the integrated terminal does not work.
 
 Migrating from an existing full checkout? Skip the install by moving its dependencies over:
 

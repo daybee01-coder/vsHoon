@@ -10,6 +10,7 @@
 		"patch:save": "node scripts/save-patches.mjs",
 		"typecheck": "node scripts/core-exec.mjs run typecheck-client",
 		"transpile": "node scripts/core-exec.mjs run transpile-client",
+		"build": "node scripts/core-exec.mjs run compile-client && node scripts/core-exec.mjs run gulp compile-extensions",
 		"compile": "node scripts/core-exec.mjs run compile",
 		"lint": "node scripts/core-exec.mjs exec -- eslint src/vs/vshoon",
 		"layers": "node scripts/core-exec.mjs run valid-layers-check",

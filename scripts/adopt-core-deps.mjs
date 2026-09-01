@@ -70,17 +70,31 @@ function assertSameCore() {
 	}
 }
 
+/**
+ * Reads the directories npm installs into from the core's own `build/npm/dirs.ts`.
+ *
+ * Guessing this list is how the first version of this script went wrong: it walked
+ * `extensions/*` one level deep and so missed the nested server packages
+ * (`extensions/json-language-features/server` and friends), `build/rspack`, `build/vite` and
+ * `extensions` itself, which left the extension build unable to resolve its dependencies.
+ */
 function collectEntries() {
-	const entries = ['node_modules', 'build/node_modules', 'remote/node_modules', '.build'];
-	const extensions = join(source, 'extensions');
-	if (existsSync(extensions)) {
-		for (const name of readdirSync(extensions)) {
-			const candidate = join(extensions, name, 'node_modules');
-			if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-				entries.push(`extensions/${name}/node_modules`);
-			}
-		}
+	const dirsFile = join(coreDir, 'build', 'npm', 'dirs.ts');
+	if (!existsSync(dirsFile)) {
+		fail(`cannot read ${dirsFile}. Run \`npm run sync\` first.`);
 	}
+
+	const source = readFileSync(dirsFile, 'utf8');
+	const block = /export const dirs = \[(?<entries>[^\]]*)\]/s.exec(source)?.groups?.entries;
+	if (!block) {
+		fail('could not read the dependency directory list out of build/npm/dirs.ts');
+	}
+
+	const dirs = [...block.matchAll(/'(?<dir>[^']*)'/g)].map(match => match.groups.dir);
+	const entries = dirs.map(dir => (dir ? `${dir}/node_modules` : 'node_modules'));
+
+	// Generated build output that a fresh core would otherwise have to rebuild.
+	entries.push('.build');
 
 	return entries;
 }

@@ -142,6 +142,7 @@ appears in `git status`, which is the signal to remove it.
 | `npm run compile` | `compile` in the core |
 | `npm run lint` | ESLint over `src/vs/vshoon` |
 | `npm run layers` | `valid-layers-check` in the core |
+| `npm run build` | Compile the client and the built-in extensions |
 | `npm test` | Transpile, then run the VShoon unit tests in the core |
 | `npm run watch` | Mirror the overlay on every change |
 | `npm run patch:save` | Rewrite the patches from the core working tree |
