@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { coreDir, fail, git, readLock, repoRoot } from './core-paths.mjs';
 import { mirrorOverlay } from './overlay.mjs';
 
@@ -18,7 +18,7 @@ fetchCore();
 resetToPinnedCommit();
 applyPatches();
 mirrorOverlay();
-linkAgentAssets();
+mirrorAgentAssets();
 
 console.log(`\n[vshoon] core is ready. Build from it with \`npm run core -- run <script>\`.`);
 
@@ -90,36 +90,86 @@ function applyPatches() {
 }
 
 /**
- * Mirrors the agent instructions and skills that the core owns. They are gitignored here
- * because they are upstream content, not VShoon content.
+ * Mirrors files the core owns into the paths agent tooling looks for.
+ *
+ * Both ends are configuration in `vshoon.lock.json`, so relocating the repository or pointing
+ * an asset somewhere else never needs a code change.
  */
-function linkAgentAssets() {
-	const instructions = join(coreDir, '.github', 'copilot-instructions.md');
-	if (existsSync(instructions)) {
-		mkdirSync(join(repoRoot, '.claude'), { recursive: true });
-		copyFileSync(instructions, join(repoRoot, '.claude', 'CLAUDE.md'));
+function mirrorAgentAssets() {
+	const assets = lock.agentAssets ?? [];
+	if (assets.length === 0) {
+		return;
 	}
 
-	const skills = join(coreDir, '.agents', 'skills');
-	if (existsSync(skills)) {
-		replaceLink(join(repoRoot, '.claude', 'skills'), skills);
+	let mirrored = 0;
+	for (const asset of assets) {
+		const { from, to, mode = 'copy' } = asset;
+		if (!from || !to) {
+			fail(`an agentAssets entry is missing "from" or "to": ${JSON.stringify(asset)}`);
+		}
+
+		if (mode !== 'copy' && mode !== 'link') {
+			fail(`agentAssets entry "${to}" has unknown mode "${mode}". Use "copy" or "link".`);
+		}
+
+		const source = join(coreDir, from);
+		const destination = join(repoRoot, to);
+		if (!existsSync(source)) {
+			console.warn(`[vshoon] agent asset ${from} is not part of this core, skipping ${to}`);
+			continue;
+		}
+
+		remove(destination);
+		mkdirSync(dirname(destination), { recursive: true });
+		if (mode === 'copy') {
+			cpSync(source, destination, { recursive: true });
+		} else {
+			// A junction records an absolute path, so it dangles if the repository moves and
+			// stays broken until the next sync. `copy` is the safer default for small assets.
+			symlinkSync(source, destination, process.platform === 'win32' ? 'junction' : 'dir');
+		}
+
+		mirrored++;
 	}
+
+	ignoreAgentAssets(assets.map(asset => asset.to));
+	console.log(`[vshoon] agent assets: ${mirrored} mirrored`);
 }
 
-function replaceLink(link, target) {
-	if (existsSync(link) || isBrokenLink(link)) {
-		rmSync(link, { recursive: true, force: true });
+/**
+ * Keeps the mirrored paths out of Git through `.git/info/exclude` rather than `.gitignore`,
+ * so that relocating an asset stays a change to `vshoon.lock.json` alone.
+ */
+function ignoreAgentAssets(paths) {
+	let excludeFile;
+	try {
+		const gitDir = git(['rev-parse', '--git-dir'], { cwd: repoRoot, capture: true }).trim();
+		excludeFile = join(resolve(repoRoot, gitDir), 'info', 'exclude');
+	} catch {
+		return; // not a Git checkout, so there is nothing to ignore
 	}
 
-	mkdirSync(dirname(link), { recursive: true });
-	symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+	const begin = '# >>> vshoon agent assets';
+	const end = '# <<< vshoon agent assets';
+	const current = existsSync(excludeFile) ? readFileSync(excludeFile, 'utf8') : '';
+	const beginIndex = current.indexOf(begin);
+	const endIndex = current.indexOf(end);
+	const withoutBlock = beginIndex !== -1 && endIndex > beginIndex
+		? current.slice(0, beginIndex) + current.slice(endIndex + end.length)
+		: current;
+	const entries = paths.map(path => `/${path.split(sep).join('/')}`);
+
+	mkdirSync(dirname(excludeFile), { recursive: true });
+	writeFileSync(excludeFile, `${withoutBlock.trimEnd()}\n\n${[begin, ...entries, end].join('\n')}\n`, 'utf8');
 }
 
-function isBrokenLink(path) {
+/** Removes a path even when it is a link whose target no longer exists. */
+function remove(path) {
 	try {
 		lstatSync(path);
-		return true;
 	} catch {
-		return false;
+		return;
 	}
+
+	rmSync(path, { recursive: true, force: true });
 }

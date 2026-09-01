@@ -154,6 +154,7 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 
 ## 9. 개발 및 검증 규칙
 
+- `.core`는 수정하지 않는다. 유일한 예외는 패치가 소유한 코어 파일이며, 수정한 뒤에는 반드시 `npm run patch:save`를 실행한다. `.core/src/vs/vshoon`은 오버레이 복사본이라 다음 미러링 때 덮어써진다.
 - 빌드와 검사는 `.core`에서 직접 실행하지 말고 저장소 루트의 npm 스크립트로 실행한다. 이 스크립트들이 오버레이를 먼저 미러링하므로 오래된 소스로 빌드되는 일이 없다. 명령 목록은 [docs/repository-layout.md](docs/repository-layout.md)에 있다.
 - 코어가 없거나 오래되었으면 먼저 `npm run sync`를 실행한다.
 - upstream이 고정한 Node 버전과 패키지 도구를 사용한다.

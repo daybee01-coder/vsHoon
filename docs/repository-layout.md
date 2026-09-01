@@ -14,7 +14,7 @@ no Git LFS quota.
 | `scripts/*.mjs` | VShoon | yes |
 | `docs/**`, `AGENTS.md` | VShoon | yes |
 | `.core/**` | Code - OSS | no, gitignored |
-| `.claude/CLAUDE.md`, `.claude/skills` | Code - OSS, mirrored by `sync` | no, gitignored |
+| paths named by `agentAssets` | Code - OSS, mirrored by `sync` | no, excluded by `sync` |
 
 ## Why the core is not committed
 
@@ -66,6 +66,29 @@ A patch owns its files exclusively; two patches must never touch the same file, 
 `npm run patch:save` refuses to run if they do. To change a core file, edit it inside `.core`
 and run `npm run patch:save`, which rewrites each patch from the core working tree with
 `core.abbrev` pinned so the same change always produces the same bytes.
+
+## Agent assets are configuration
+
+Agent tooling expects some files at fixed paths that the core, not VShoon, owns. `sync` mirrors
+them from the core, and both ends live in `agentAssets` in `vshoon.lock.json` so that moving the
+repository or repointing an asset never touches code:
+
+```json
+{ "from": ".github/copilot-instructions.md", "to": ".claude/CLAUDE.md", "mode": "copy" }
+```
+
+`from` is relative to the core, `to` is relative to this repository, and `mode` is either:
+
+- `copy` — the default. Nothing records a path, so the mirror survives a rename of the
+  repository or the core.
+- `link` — a directory symlink, a junction on Windows. Junctions store an absolute target, so
+  the link dangles after a rename until the next `sync` recreates it. Worth it only for
+  something large enough that copying hurts.
+
+`sync` also keeps these paths out of Git by rewriting a delimited block in `.git/info/exclude`
+rather than listing them in `.gitignore`, so the ignore rules follow the configuration. Nothing
+deletes a destination the configuration no longer names: it simply stops being ignored and
+appears in `git status`, which is the signal to remove it.
 
 ## Commands
 

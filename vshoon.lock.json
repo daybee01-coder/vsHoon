@@ -13,5 +13,18 @@
 		"VSH-0001-product-identity.patch",
 		"VSH-0002-start-window-seam.patch",
 		"VSH-0003-source-layers.patch"
+	],
+	"$agentAssetsComment": "Files the core owns that are mirrored into the paths agent tooling looks for. \"from\" is relative to the core, \"to\" is relative to this repository. mode \"copy\" stores no path and survives a rename; mode \"link\" creates a junction whose absolute target breaks until the next sync.",
+	"agentAssets": [
+		{
+			"from": ".github/copilot-instructions.md",
+			"to": ".claude/CLAUDE.md",
+			"mode": "copy"
+		},
+		{
+			"from": ".agents/skills",
+			"to": ".claude/skills",
+			"mode": "copy"
+		}
 	]
 }
