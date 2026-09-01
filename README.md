@@ -27,8 +27,25 @@ failures the moment it launches.
   runtime stops `npm install` in `preinstall`. `VSCODE_SKIP_NODE_VERSION_CHECK=1` gets past it
   but is not a fix.
 - **A C/C++ toolchain** (Visual Studio Build Tools on Windows) for the core's native modules —
-  `spdlog`, `node-pty`, `native-watchdog`. Without it the product still starts, but logging is
-  degraded and the integrated terminal does not work.
+  `@vscode/spdlog` and `node-pty`. Without them the product still starts, but logging is degraded
+  and the integrated terminal does not work.
+
+  `preinstall` looks for Visual Studio under `%ProgramFiles%\Microsoft Visual Studio\<year>\`
+  and reports `Invalid C/C++ Compiler Toolchain` for an install anywhere else. Point it at the
+  real location instead, which `vswhere -products * -format json` will tell you:
+
+  ```sh
+  vs2022_install='C:\Program' npm run core -- install
+  ```
+
+  npm does not rebuild a package that is already present, so a tree whose native modules were
+  never compiled stays broken through `npm install`. Delete those packages first and let the
+  install put them back:
+
+  ```sh
+  rm -rf .core/node_modules/@vscode/spdlog .core/node_modules/node-pty
+  npm run core -- install
+  ```
 
 Migrating from an existing full checkout? Skip the install by moving its dependencies over:
 
