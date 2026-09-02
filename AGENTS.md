@@ -32,7 +32,7 @@ VShoon은 공개된 Code - OSS 소스를 기반으로 한다. Microsoft Visual S
 
 작업 대상 구분:
 
-- VShoon 소유: `src/vs/vshoon/**`, `patches/**`, `scripts/**`, `docs/**`, `AGENTS.md`, `vshoon.lock.json`
+- VShoon 소유: `src/vs/vshoon/**`, `extensions/vshoon-*`, 브랜드 마스터 `logo.png`, `vshoon.lock.json`의 overlay에 명시된 Windows 브랜드 자산, `patches/**`, `scripts/**`, `docs/**`, `AGENTS.md`
 - 코어 소유: `.core/**` 전부. 여기서 직접 편집해도 되는 것은 패치 대상 파일뿐이며, 편집 후 반드시 `npm run patch:save`를 실행한다.
 - `.core/src/vs/vshoon`은 오버레이 복사본이다. 여기서 편집하면 다음 미러링 때 덮어써진다.
 
@@ -136,6 +136,8 @@ CodeApplication 시작
 - `docs/start-window.md`: 시작 화면 수명주기, 우회 조건, UX
 - `docs/ui-extension-api.md`: capability와 보안 모델
 - `docs/upstream-patches.md`: upstream 패치 장부
+- `docs/release.md`: Windows 빌드 산출물, 배포 전 검증, 롤백 절차
+- `docs/licensing.md`: 빌드에 포함되는 라이선스와 Microsoft 배포와의 차이
 - `docs/upstream/<버전>.md`: 버전별 동기화 보고서
 
 패치 장부의 각 항목에는 패치 ID, 목적, 수정한 upstream 파일, 수정 이유, 의존 symbol/service, 충돌 위험도, 테스트, 제거 가능 조건을 기록한다.
@@ -143,12 +145,13 @@ CodeApplication 시작
 ## 8. 코어 업데이트 절차
 
 1. `upstream-sync/<버전>` 브랜치를 만든다.
-2. `vshoon.lock.json`의 `upstream.commit`과 `version`을 새 코어 커밋으로 올린다.
-3. `npm run sync`를 실행한다. 적용되지 않는 패치가 있으면 sync가 해당 패치 이름과 함께 중단된다.
-4. 충돌은 `.core` 안에서 패치 ID 단위로 해결한 뒤 `npm run patch:save`로 패치를 다시 기록한다.
-5. `npm run typecheck`, `npm run layers`, `npm run lint`, `npm test`, 그리고 필요한 경우 데스크톱 실행을 확인한다.
-6. `docs/upstream/<버전>.md`에 충돌, API 변경, 수동 확인 사항을 기록한다.
-7. 검증을 통과한 뒤 VShoon 통합 브랜치에 반영한다.
+2. `npm run sync:check -- --try <후보 ref>`로 어떤 패치가 깨지는지 먼저 확인한다.
+3. `vshoon.lock.json`의 `upstream.commit`과 `version`을 새 코어 커밋으로 올린다.
+4. `npm run sync`를 실행한다. 적용되지 않는 패치가 있으면 sync가 해당 패치 이름과 함께 중단된다.
+5. 충돌은 `.core` 안에서 패치 ID 단위로 해결한 뒤 `npm run patch:save`로 패치를 다시 기록하고 `npm run sync:check`로 표류가 남지 않았는지 확인한다.
+6. `npm run typecheck`, `npm run layers`, `npm run lint`, `npm test`, 그리고 필요한 경우 데스크톱 실행을 확인한다.
+7. `docs/upstream/<버전>.md`에 충돌, API 변경, 수동 확인 사항을 기록한다.
+8. 검증을 통과한 뒤 VShoon 통합 브랜치에 반영한다.
 
 VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 
@@ -156,7 +159,7 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 
 - `.core`는 수정하지 않는다. 유일한 예외는 패치가 소유한 코어 파일이며, 수정한 뒤에는 반드시 `npm run patch:save`를 실행한다. `.core/src/vs/vshoon`은 오버레이 복사본이라 다음 미러링 때 덮어써진다.
 - 빌드와 검사는 `.core`에서 직접 실행하지 말고 저장소 루트의 npm 스크립트로 실행한다. 이 스크립트들이 오버레이를 먼저 미러링하므로 오래된 소스로 빌드되는 일이 없다. 명령 목록은 [docs/repository-layout.md](docs/repository-layout.md)에 있다.
-- 코어가 없거나 오래되었으면 먼저 `npm run sync`를 실행한다.
+- 코어가 없거나 오래되었으면 먼저 `npm run sync`를 실행한다. 코어 상태가 의심스러우면 `npm run sync:check`로 패치·오버레이 표류를 먼저 확인한다.
 - 제품을 실행하거나 디버깅하기 전에 `npm run build`를 실행한다. `typecheck`와 `test`는 `src/`만 보므로, 내장 확장이 컴파일되지 않은 트리에서도 통과한다.
 - 시작 창을 디버깅할 때는 `VShoon: Start Window (desktop launch)` 구성을 쓴다. `scripts/code.bat`은 `VSCODE_CLI=1`을 설정하므로 정책이 `notDesktopLaunch`로 우회한다.
 - 브레이크포인트는 `src/vs/vshoon`에 건다. `.vscode/launch.json`의 `sourceMapPathOverrides`가 오버레이 복사본을 이 저장소의 소스로 되돌려 매핑한다.
@@ -198,7 +201,7 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 - [x] 개인 VShoon origin 연결
 - [x] 최소 VShoon 제품 식별자 적용
 - [x] Windows C++ 빌드 도구 및 npm 의존성 설치
-- [ ] 라이선스와 배포 차이 세부 문서화
+- [x] 라이선스와 배포 차이 세부 문서화
 - [ ] 변경 전 upstream 개발 빌드 검증
 
 ### 1단계 — 시작 경로 구조
@@ -214,21 +217,22 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 
 - [x] sandboxed 시작 창 renderer의 기본 화면과 안전한 IPC 구현
 - [x] 최근 프로젝트와 열기·제거·고정 동작 연결
-- [ ] 설정, CLI, 접근성, 단위 테스트, smoke test 추가
+- [x] 시작 창 비활성화 설정과 CLI 선택지 추가
+- [x] 접근성, 단위 테스트, smoke test 보강
 
 ### 3단계 — 제한된 UI 확장
 
-- [ ] 구체적인 UI 요구사항을 capability로 분류
-- [ ] 내부 contribution registry와 제한된 bridge 설계
-- [ ] 버전, 검증, 권한, fallback 구현
-- [ ] 샘플 확장과 계약 테스트 작성
+- [x] 구체적인 UI 요구사항을 capability로 분류
+- [x] 내부 contribution registry와 제한된 bridge 설계
+- [x] 버전, 검증, 권한, fallback 구현
+- [x] 샘플 확장과 계약 테스트 작성
 
 ### 4단계 — 패키징과 업데이트
 
-- [ ] VShoon 고유 아이콘 및 설치 관리자 식별자 완성
-- [ ] Windows 개발 패키지 빌드 및 실행
-- [ ] upstream 동기화 검사 자동화
-- [ ] 배포 및 롤백 절차 작성
+- [x] VShoon 고유 아이콘 및 설치 관리자 식별자 완성
+- [x] Windows 개발 패키지 빌드 및 실행
+- [x] upstream 동기화 검사 자동화
+- [x] 배포 및 롤백 절차 작성
 
 ## 11. 에이전트 작업 방식
 

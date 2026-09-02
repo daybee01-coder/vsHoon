@@ -17,6 +17,8 @@ The launcher is eligible only for a desktop launch with no target and no special
 | Launch condition | Behavior |
 | --- | --- |
 | No target, ordinary desktop launch | Show VShoon start window |
+| `vshoon.startWindow.enabled` is `false` | Existing workbench path |
+| `--disable-start-window` | Existing workbench path for this launch |
 | File, folder, or workspace argument | Existing workbench path |
 | `--folder-uri` or `--file-uri` | Existing workbench path |
 | Protocol URL | Existing protocol path |
@@ -45,6 +47,7 @@ on the `launch` channel.
 | --- | --- |
 | No target | Focus the existing start window |
 | `--reuse-window`, no target | Focus the existing start window |
+| `--disable-start-window` | Upstream opens the workbench; start window steps down |
 | File, folder, or workspace argument | Upstream opens the workbench; start window steps down |
 | `--folder-uri` or `--file-uri` | Upstream opens the workbench; start window steps down |
 | `--new-window` | Upstream opens an empty window; start window steps down |
@@ -63,6 +66,18 @@ keep the start window alive for the whole editing session.
 
 `--status` and other diagnostics never reach the launch service, and `getMainProcessId()` is
 delegated unchanged so that the Windows foreground handshake keeps working.
+
+## Disabling the Launcher
+
+`vshoon.startWindow.enabled` is an application-scoped setting contributed by the
+`vshoon-start` built-in extension. It defaults to `true`. The main process reads the default
+profile's user configuration before deciding whether to create a renderer; setting it to
+`false` therefore keeps the entire launch on the upstream workbench path.
+
+`--disable-start-window` is the non-persistent equivalent. It is a native CLI option rather
+than a renderer convention, so it is preserved when the command is forwarded to an existing
+instance. If that instance is currently showing the launcher, it steps down before the
+upstream launch service opens the workbench.
 
 ## Debugging the Launcher
 
@@ -97,10 +112,17 @@ requests that change the list return the new one rather than pushing an update.
 
 | Request | Returns |
 | --- | --- |
+| `configuration` | the translated messages and the display language |
 | `projects` | the recent list |
 | `togglePin`, `removeRecent` | the recent list, updated |
 | `openRecent`, `chooseFolder`, `chooseWorkspace`, `openEmpty` | opens a window |
 | `quit` | closes the launcher, which ends the session |
+
+`configuration` comes first and nothing is rendered before it resolves. A bundled build rewrites
+every `localize` call into an index into a message table that only the main process holds, so a
+renderer that localized before that table arrived would throw `NLS MISSING` instead of drawing
+its labels — a failure that a development build, which keeps the English fallback inside the
+call, never shows. The packaged start-window smoke test is the check that keeps it honest.
 
 Anything else is refused before it reaches a handler. An `id` names an entry in the model the
 renderer was last given; the main process resolves it against that list, so a path the renderer
@@ -127,7 +149,7 @@ workbench itself through `IWindowsMainService`, and closing it without choosing 
 
 `VShoon 열기` 동작은 시작 창을 먼저 숨긴다. 기존 `IWindowsMainService`가 Workbench `BrowserWindow`를 실제 생성한 뒤에만 시작 창과 IPC listener를 폐기한다. 유일한 창을 먼저 닫으면 Electron의 `window-all-closed` 처리로 앱이 종료될 수 있으므로 이 순서를 유지한다.
 
-두 번째 인스턴스가 시작 창을 밀어내는 경우에도 같은 순서를 따른다. `supersede()`는 창을 숨기고 소유권만 즉시 넘긴 뒤, 다른 창이 실제로 생길 때까지 기다렸다가 폐기한다. 이때 `show()`는 `superseded`로 완료되므로 `openFirstWindow()`는 앱을 종료하지 않고 빈 결과를 반환한다.
+두 번째 인스턴스가 시작 창을 밀어내는 경우에도 같은 순서를 따른다. `supersede()`는 창을 숨기고 소유권만 즉시 넘긴 뒤, 다른 창이 실제로 생길 때까지 기다렸다가 폐기한다.
 
 ## MVP Acceptance Criteria
 
@@ -137,3 +159,23 @@ workbench itself through `IWindowsMainService`, and closing it without choosing 
 - The renderer has context isolation and no direct Node access.
 - Keyboard-only navigation and screen-reader labels work.
 - Empty and stale recent lists remain usable.
+
+## Accessibility and Smoke Coverage
+
+The renderer sends all visible strings through `vs/nls`, derives the document language from the
+runtime locale, and exposes loading and result changes through `aria-busy` and polite status
+regions. Initial focus moves to the first recent project, or to **Open Folder** when the list is
+empty. Up/Down, Home, and End move between project-open buttons; Tab continues into each
+project's pin and remove actions. Pinning restores the same action, removing restores the nearest
+surviving project, and cancelling a native picker restores the button that opened it.
+
+Focus outlines use separate light and dark contrast ramps and defer to system Highlight colors
+in forced-colors mode. `npm run smoke:start-window` launches the real sandbox renderer with an
+isolated empty profile and verifies its accessible button names, loading state, initial focus,
+and forward/reverse Tab movement through the Chrome accessibility and input protocols.
+
+The header carries the VShoon mark, `vshoon-logo.png`, generated next to the renderer by
+`npm run brand:win32` from the same `logo.png` the Windows icon comes from. It is decorative next
+to the product name, so it ships with an empty `alt` and stays out of the accessibility tree; the
+content security policy allows `img-src 'self'` and nothing else, and the smoke test asserts the
+image actually decodes so a missing packaging pattern or a tightened policy fails loudly.

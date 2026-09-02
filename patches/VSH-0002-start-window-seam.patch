@@ -1,12 +1,12 @@
 diff --git a/src/vs/code/electron-main/app.ts b/src/vs/code/electron-main/app.ts
-index c9736ff355fa..6ec37e5c9408 100644
+index c9736ff355fa..44516e59151e 100644
 --- a/src/vs/code/electron-main/app.ts
 +++ b/src/vs/code/electron-main/app.ts
 @@ -147,6 +147,10 @@ import { NativeWebContentExtractorService } from '../../platform/webContentExtra
  import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
  import { ITerminalSandboxService, NullTerminalSandboxService } from '../../platform/sandbox/common/terminalSandboxService.js';
  import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
-+import { evaluateVShoonStartWindow } from '../../vshoon/common/startWindowPolicy.js';
++import { evaluateVShoonStartWindow, VSHOON_START_WINDOW_ENABLED_SETTING } from '../../vshoon/common/startWindowPolicy.js';
 +import { toVShoonLaunchRequest } from '../../vshoon/node/launchRequest.js';
 +import { VShoonLaunchMainService } from '../../vshoon/electron-main/launchMainService.js';
 +import { IVShoonStartWindowMainService, VShoonStartWindowMainService } from '../../vshoon/electron-main/startWindowMainService.js';
@@ -43,7 +43,7 @@ index c9736ff355fa..6ec37e5c9408 100644
 +		const launchRequest = toVShoonLaunchRequest(args);
 +		const startWindowDecision = evaluateVShoonStartWindow({
 +			...launchRequest,
-+			enabled: this.productService.applicationName === 'vshoon',
++			enabled: this.productService.applicationName === 'vshoon' && this.configurationService.getValue<boolean>(VSHOON_START_WINDOW_ENABLED_SETTING) !== false,
 +			initialStartup: true,
 +			desktopLaunch: context === OpenContext.DESKTOP,
 +			hasExplicitTarget: launchRequest.hasExplicitTarget || macOpenFiles.length > 0,
@@ -72,3 +72,27 @@ index c9736ff355fa..6ec37e5c9408 100644
  		const hasCliArgs = args._.length;
  		const hasFolderURIs = !!args['folder-uri'];
  		const hasFileURIs = !!args['file-uri'];
+diff --git a/src/vs/platform/environment/common/argv.ts b/src/vs/platform/environment/common/argv.ts
+index 00e12e780078..665f676f5810 100644
+--- a/src/vs/platform/environment/common/argv.ts
++++ b/src/vs/platform/environment/common/argv.ts
+@@ -109,6 +109,7 @@ export interface NativeParsedArgs {
+ 	'open-url'?: boolean;
+ 	'skip-release-notes'?: boolean;
+ 	'skip-welcome'?: boolean;
++	'disable-start-window'?: boolean;
+ 	'disable-telemetry'?: boolean;
+ 	'telemetry-level'?: string;
+ 	'export-default-configuration'?: string;
+diff --git a/src/vs/platform/environment/node/argv.ts b/src/vs/platform/environment/node/argv.ts
+index 8a36a25aea5f..c15cb8f0c56b 100644
+--- a/src/vs/platform/environment/node/argv.ts
++++ b/src/vs/platform/environment/node/argv.ts
+@@ -108,6 +108,7 @@ export const OPTIONS: OptionDescriptions<Required<NativeParsedArgs>> = {
+ 	'goto': { type: 'boolean', cat: 'o', alias: 'g', args: 'file:line[:character]', description: localize('goto', "Open a file at the path on the specified line and character position.") },
+ 	'new-window': { type: 'boolean', cat: 'o', alias: 'n', description: localize('newWindow', "Force to open a new window.") },
+ 	'reuse-window': { type: 'boolean', cat: 'o', alias: 'r', description: localize('reuseWindow', "Force to open a file or folder in an already opened window.") },
++	'disable-start-window': { type: 'boolean', cat: 'o', description: localize('disableStartWindow', "Skip the VShoon start window and open the workbench directly.") },
+ 	'agents': { type: 'boolean', cat: 'o', deprecates: ['sessions'], description: localize('agents', "Opens the agents window.") },
+ 	'wait': { type: 'boolean', cat: 'o', alias: 'w', description: localize('wait', "Wait for the files to be closed before returning.") },
+ 	'waitMarkerFilePath': { type: 'string' },

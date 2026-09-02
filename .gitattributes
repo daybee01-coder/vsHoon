@@ -2,4 +2,4 @@
 * text=auto eol=lf
 
 # Patches are applied byte for byte and must never be rewritten by Git.
-*.patch -text
+*.patch -text whitespace=-space-before-tab

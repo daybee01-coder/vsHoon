@@ -12,6 +12,7 @@ suite('VShoon Launch Request', () => {
 
 	test('reports no target for a bare launch', () => {
 		assert.deepStrictEqual(toVShoonLaunchRequest({ _: [] }), {
+			disableStartWindow: false,
 			hasExplicitTarget: false,
 			hasProtocolUrl: false,
 			hasSpecialFileMode: false,
@@ -27,6 +28,7 @@ suite('VShoon Launch Request', () => {
 	test('maps every argument that takes the launch away from the start window', () => {
 		const args: NativeParsedArgs = {
 			_: ['project'],
+			'disable-start-window': true,
 			'open-url': true,
 			_urls: ['vshoon://open'],
 			goto: true,
@@ -39,6 +41,7 @@ suite('VShoon Launch Request', () => {
 		};
 
 		assert.deepStrictEqual(toVShoonLaunchRequest(args), {
+			disableStartWindow: true,
 			hasExplicitTarget: true,
 			hasProtocolUrl: true,
 			hasSpecialFileMode: true,

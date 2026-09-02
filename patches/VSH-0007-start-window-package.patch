@@ -1,0 +1,32 @@
+diff --git a/build/buildfile.ts b/build/buildfile.ts
+index c2dbccb44dde..f43d91a25514 100644
+--- a/build/buildfile.ts
++++ b/build/buildfile.ts
+@@ -49,6 +49,7 @@ export const code = [
+ 	createModuleDescription('vs/code/electron-utility/sharedProcess/sharedProcessMain'),
+ 	createModuleDescription('vs/code/electron-browser/workbench/workbench'),
+ 	createModuleDescription('vs/sessions/electron-browser/sessions'),
++	createModuleDescription('vs/vshoon/electron-sandbox/startWindow/startWindow'),
+ ];
+ 
+ export const codeWeb = createModuleDescription('vs/code/browser/workbench/workbench');
+diff --git a/build/next/index.ts b/build/next/index.ts
+index defbaa1b9dd1..b0c6942c0657 100644
+--- a/build/next/index.ts
++++ b/build/next/index.ts
+@@ -113,6 +113,7 @@ const codeEntryPoints = [
+ 	'vs/code/electron-utility/sharedProcess/sharedProcessMain',
+ 	'vs/code/electron-browser/workbench/workbench',
+ 	'vs/sessions/electron-browser/sessions',
++	'vs/vshoon/electron-sandbox/startWindow/startWindow',
+ ];
+ 
+ // Web entry points (used in server-web and vscode-web)
+@@ -263,6 +264,7 @@ const desktopResourcePatterns = [
+ 	'vs/code/electron-browser/workbench/workbench-dev.html',
+ 	'vs/sessions/electron-browser/sessions.html',
+ 	'vs/sessions/electron-browser/sessions-dev.html',
++	'vs/vshoon/electron-sandbox/startWindow/*.{html,css,png}',
+ 	'vs/workbench/services/extensions/worker/webWorkerExtensionHostIframe.html',
+ 	'vs/workbench/contrib/webview/browser/pre/*.html',
+ 

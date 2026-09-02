@@ -8,6 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/comm
 import { evaluateVShoonSecondInstance, evaluateVShoonStartWindow, IVShoonLaunchRequest, IVShoonSecondInstanceContext, IVShoonStartWindowLaunchContext } from '../../common/startWindowPolicy.js';
 
 const defaultRequest: IVShoonLaunchRequest = {
+	disableStartWindow: false,
 	hasExplicitTarget: false,
 	hasProtocolUrl: false,
 	hasSpecialFileMode: false,
@@ -20,6 +21,7 @@ const defaultRequest: IVShoonLaunchRequest = {
 };
 
 const bypassKeys: ReadonlyArray<keyof IVShoonLaunchRequest> = [
+	'disableStartWindow',
 	'hasExplicitTarget',
 	'hasProtocolUrl',
 	'hasSpecialFileMode',
@@ -32,6 +34,7 @@ const bypassKeys: ReadonlyArray<keyof IVShoonLaunchRequest> = [
 ];
 
 const bypassReasons = [
+	'disabledByCli',
 	'explicitTarget',
 	'protocolUrl',
 	'specialFileMode',

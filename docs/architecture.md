@@ -35,6 +35,21 @@ The launcher must use main-process services for history and window creation. It 
 
 The UI capability bridge planned after the launcher is a separate subsystem and must not be coupled to launcher IPC.
 
+The first UI capability subsystem is renderer-independent and declarative:
+
+```text
+bundled extension manifest
+  -> vshoon.ui.headerCommands extension point
+  -> VShoon manifest bridge (schema, version, permission, atomic replacement)
+  -> capability registry (immutable descriptors and disposable lifecycle)
+  -> future VShoon-owned header renderer
+```
+
+`workbench.common.main.ts` passes the upstream extension registry into a VShoon-owned registration
+function. The VShoon module does not import Workbench modules in the opposite direction. Version 1
+accepts bundled extensions only; the registry and bridge do not expose DOM, CSS, assets, or renderer
+callbacks.
+
 ## Compatibility Strategy
 
 VShoon-specific behavior is gated by product configuration and a user/CLI opt-out. With the gate disabled, execution must follow upstream behavior. Each upstream modification is recorded in `docs/upstream-patches.md` and tested at the smallest applicable scope.

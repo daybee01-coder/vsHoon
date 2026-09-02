@@ -9,6 +9,7 @@ import { FileAccess } from '../../base/common/network.js';
 import { isMacintosh } from '../../base/common/platform.js';
 import { URI } from '../../base/common/uri.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
+import { getNLSLanguage, getNLSMessages } from '../../nls.js';
 import { IDialogMainService } from '../../platform/dialogs/electron-main/dialogMainService.js';
 import { IEnvironmentMainService } from '../../platform/environment/electron-main/environmentMainService.js';
 import { createDecorator } from '../../platform/instantiation/common/instantiation.js';
@@ -17,6 +18,7 @@ import { ILogService } from '../../platform/log/common/log.js';
 import { IStateService } from '../../platform/state/node/state.js';
 import { IWindowOpenable } from '../../platform/window/common/window.js';
 import { IWindowsMainService, OpenContext } from '../../platform/windows/electron-main/windows.js';
+import { isRecentFolder } from '../../platform/workspaces/common/workspaces.js';
 import { IWorkspacesHistoryMainService } from '../../platform/workspaces/electron-main/workspacesHistoryMainService.js';
 import { IVShoonRecentProject, IVShoonRecentProjectInput, prunePinnedProjects, toggleVShoonPinnedProject, toVShoonRecentProjects } from '../common/recentProjects.js';
 
@@ -32,11 +34,19 @@ type VShoonStartWindowRequest =
 	| { readonly type: 'chooseFolder' }
 	| { readonly type: 'chooseWorkspace' }
 	| { readonly type: 'openEmpty' }
-	| { readonly type: 'quit' };
+	| { readonly type: 'quit' }
+	| { readonly type: 'configuration' };
 
 export interface IVShoonStartWindowResponse {
 	readonly projects?: readonly IVShoonRecentProject[];
 	readonly opened?: boolean;
+	readonly nls?: IVShoonStartWindowNls;
+}
+
+/** The translated messages the renderer needs before it can display any text. */
+export interface IVShoonStartWindowNls {
+	readonly messages: string[];
+	readonly language: string | undefined;
 }
 
 export const IVShoonStartWindowMainService = createDecorator<IVShoonStartWindowMainService>('vshoonStartWindowMainService');
@@ -187,6 +197,9 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		}
 
 		switch (parsed.type) {
+			case 'configuration':
+				return { nls: { messages: getNLSMessages(), language: getNLSLanguage() } };
+
 			case 'projects':
 				return { projects: await this.loadProjects() };
 
@@ -218,7 +231,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 	/** Reads the recent list and overlays the VShoon-owned pin state. */
 	private async loadProjects(): Promise<readonly IVShoonRecentProject[]> {
 		const recent = await this.workspacesHistoryMainService.getRecentlyOpened();
-		const inputs: IVShoonRecentProjectInput[] = recent.workspaces.map(entry => 'folderUri' in entry
+		const inputs: IVShoonRecentProjectInput[] = recent.workspaces.map(entry => isRecentFolder(entry)
 			? { kind: 'folder', uri: entry.folderUri, label: entry.label, remoteAuthority: entry.remoteAuthority }
 			: { kind: 'workspace', uri: entry.workspace.configPath, label: entry.label, remoteAuthority: entry.remoteAuthority });
 
@@ -379,6 +392,7 @@ function parseRequest(request: unknown): VShoonStartWindowRequest | undefined {
 
 	const { type, id } = request as { type?: unknown; id?: unknown };
 	switch (type) {
+		case 'configuration':
 		case 'projects':
 		case 'chooseFolder':
 		case 'chooseWorkspace':

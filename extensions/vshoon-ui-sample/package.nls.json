@@ -1,0 +1,6 @@
+{
+	"displayName": "VShoon UI Capability Sample",
+	"description": "Demonstrates the optional VShoon header command capability with a standard command fallback.",
+	"command.hello.title": "Run VShoon UI Sample",
+	"command.hello.tooltip": "Run the bundled VShoon UI capability sample command"
+}

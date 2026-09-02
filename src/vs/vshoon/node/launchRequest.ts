@@ -13,6 +13,7 @@ import { IVShoonLaunchRequest } from '../common/startWindowPolicy.js';
  */
 export function toVShoonLaunchRequest(args: NativeParsedArgs): IVShoonLaunchRequest {
 	return {
+		disableStartWindow: !!args['disable-start-window'],
 		hasExplicitTarget: args._.length > 0 || !!args['folder-uri'] || !!args['file-uri'],
 		hasProtocolUrl: !!args['open-url'] && !!args._urls?.length,
 		hasSpecialFileMode: !!args.diff || !!args.merge || !!args.wait || !!args.goto,

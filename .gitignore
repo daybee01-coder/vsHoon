@@ -6,6 +6,8 @@
 
 node_modules/
 /out*/
+# Windows package output. Produced by `npm run core -- run gulp vscode-win32-x64`.
+/VSCode-win32-*/
 .build/
 .tmp/
 *.tsbuildinfo

@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 	<head>
 		<meta charset="UTF-8">
-		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self';">
+		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self';">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>VShoon</title>
 		<link rel="stylesheet" href="./startWindow.css">
@@ -10,32 +10,33 @@
 	<body>
 		<main class="start-window" aria-labelledby="product-name">
 			<header class="product-header">
-				<div class="product-mark" aria-hidden="true">V</div>
+				<img class="product-mark" src="./vshoon-logo.png" alt="" width="52" height="52">
 				<div>
 					<h1 id="product-name">VShoon</h1>
-					<p>프로젝트를 선택하고 작업을 시작하세요.</p>
+					<p id="product-subtitle"></p>
 				</div>
 			</header>
 
 			<section class="workspace" aria-labelledby="recent-title">
 				<div class="section-heading">
-					<h2 id="recent-title">최근 프로젝트</h2>
-					<span id="recent-count"></span>
+					<h2 id="recent-title"></h2>
+					<span id="recent-count" aria-live="polite"></span>
 				</div>
 
-				<ul id="recent-list" class="recent-list" aria-labelledby="recent-title"></ul>
+				<p id="recent-navigation-help" class="screen-reader-only"></p>
+				<ul id="recent-list" class="recent-list" aria-labelledby="recent-title" aria-describedby="recent-navigation-help" aria-busy="true"></ul>
 
-				<div id="empty-state" class="empty-state" hidden>
-					<strong>아직 열어본 프로젝트가 없습니다.</strong>
-					<p>아래에서 폴더나 워크스페이스를 열면 여기에 쌓입니다.</p>
+				<div id="empty-state" class="empty-state" role="status" hidden>
+					<strong id="empty-title"></strong>
+					<p id="empty-description"></p>
 				</div>
 			</section>
 
 			<footer class="actions">
-				<button id="quit" class="secondary" type="button">종료</button>
-				<button id="open-empty" class="secondary" type="button">빈 창</button>
-				<button id="open-workspace" class="secondary" type="button">워크스페이스 열기</button>
-				<button id="open-folder" class="primary" type="button" autofocus>폴더 열기</button>
+				<button id="quit" class="secondary" type="button"></button>
+				<button id="open-empty" class="secondary" type="button"></button>
+				<button id="open-workspace" class="secondary" type="button"></button>
+				<button id="open-folder" class="primary" type="button"></button>
 			</footer>
 
 			<p id="status" class="status" role="status" aria-live="polite"></p>

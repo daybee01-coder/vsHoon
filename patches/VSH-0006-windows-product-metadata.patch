@@ -1,0 +1,119 @@
+diff --git a/build/gulpfile.reh.ts b/build/gulpfile.reh.ts
+index f0968a51bdc2..6ad9801f1732 100644
+--- a/build/gulpfile.reh.ts
++++ b/build/gulpfile.reh.ts
+@@ -588,11 +588,11 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
+ 			await rcedit(fullPath, {
+ 				'file-version': baseVersion,
+ 				'version-string': {
+-					'CompanyName': 'Microsoft Corporation',
++					'CompanyName': productContents.companyName,
+ 					'FileDescription': productContents.nameLong,
+ 					'FileVersion': packageJsonContents.version,
+ 					'InternalName': basename,
+-					'LegalCopyright': 'Copyright (C) 2026 Microsoft. All rights reserved',
++					'LegalCopyright': productContents.copyright,
+ 					'OriginalFilename': basename,
+ 					'ProductName': productContents.nameLong,
+ 					'ProductVersion': packageJsonContents.version,
+diff --git a/build/gulpfile.vscode.ts b/build/gulpfile.vscode.ts
+index ac122c379402..35b522cece7e 100644
+--- a/build/gulpfile.vscode.ts
++++ b/build/gulpfile.vscode.ts
+@@ -609,7 +609,17 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
+ function hasAuthenticodeSignature(filePath: string): Promise<boolean> {
+ 	return new Promise((resolve, reject) => {
+ 		const proc = cp.spawn('signtool.exe', ['verify', '/pa', filePath]);
+-		proc.on('error', reject);
++		proc.on('error', error => {
++			// A development machine has no Windows SDK signing tools on its PATH, and this
++			// build signs nothing. Without signtool there is no signature to strip either,
++			// so packaging continues instead of failing on the last step.
++			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
++				resolve(false);
++				return;
++			}
++
++			reject(error);
++		});
+ 		proc.on('exit', code => resolve(code === 0));
+ 	});
+ }
+@@ -663,11 +673,11 @@ function patchWin32DependenciesTask(destinationFolderName: string) {
+ 			await rcedit(fullPath, {
+ 				'file-version': baseVersion,
+ 				'version-string': {
+-					'CompanyName': 'Microsoft Corporation',
++					'CompanyName': product.companyName,
+ 					'FileDescription': product.nameLong,
+ 					'FileVersion': packageJson.version,
+ 					'InternalName': basename,
+-					'LegalCopyright': 'Copyright (C) 2026 Microsoft. All rights reserved',
++					'LegalCopyright': product.copyright,
+ 					'OriginalFilename': basename,
+ 					'ProductName': product.nameLong,
+ 					'ProductVersion': packageJson.version,
+diff --git a/build/gulpfile.vscode.win32.ts b/build/gulpfile.vscode.win32.ts
+index 1f0f2d9ea0a1..1edaae92aca4 100644
+--- a/build/gulpfile.vscode.win32.ts
++++ b/build/gulpfile.vscode.win32.ts
+@@ -84,6 +84,10 @@ function buildWin32Setup(arch: string, target: string): task.CallbackTask {
+ 		const definitions: Record<string, unknown> = {
+ 			NameLong: product.nameLong,
+ 			NameShort: product.nameShort,
++			PublisherName: product.win32PublisherName,
++			PublisherUrl: product.win32PublisherUrl,
++			Copyright: product.copyright,
++			SetupBaseName: product.win32SetupBaseName,
+ 			DirName: product.win32DirName,
+ 			Version: pkg.version,
+ 			RawVersion: pkg.version.replace(/-\w+$/, ''),
+diff --git a/build/lib/electron.ts b/build/lib/electron.ts
+index 27151cc45465..82e112d49a89 100644
+--- a/build/lib/electron.ts
++++ b/build/lib/electron.ts
+@@ -143,8 +143,8 @@ const electronAssetResolver = electronFeed
+ export const config = {
+ 	version: electronVersion,
+ 	productAppName: product.nameLong,
+-	companyName: 'Microsoft Corporation',
+-	copyright: 'Copyright (C) 2026 Microsoft. All rights reserved',
++	companyName: product.companyName,
++	copyright: product.copyright,
+ 	darwinExecutable: product.nameShort,
+ 	darwinIcon: 'resources/darwin/code.icns',
+ 	darwinBundleIdentifier: product.darwinBundleIdentifier,
+diff --git a/build/win32/code.iss b/build/win32/code.iss
+index 5b4306143f6c..ab61d3705349 100644
+--- a/build/win32/code.iss
++++ b/build/win32/code.iss
+@@ -8,14 +8,15 @@
+ AppId={#AppId}
+ AppName={#NameLong}
+ AppVerName={#NameVersion}
+-AppPublisher=Microsoft Corporation
+-AppPublisherURL=https://code.visualstudio.com/
+-AppSupportURL=https://code.visualstudio.com/
+-AppUpdatesURL=https://code.visualstudio.com/
++AppPublisher={#PublisherName}
++AppPublisherURL={#PublisherUrl}
++AppCopyright={#Copyright}
++AppSupportURL={#PublisherUrl}
++AppUpdatesURL={#PublisherUrl}
+ DefaultGroupName={#NameLong}
+ AllowNoIcons=yes
+ OutputDir={#OutputDir}
+-OutputBaseFilename=VSCodeSetup
++OutputBaseFilename={#SetupBaseName}
+ Compression=lzma
+ SolidCompression=yes
+ AppMutex={code:GetAppMutex}
+@@ -1382,7 +1383,7 @@ begin
+ 
+   #if "user" == InstallTarget
+     if not WizardSilent() and IsAdmin() then begin
+-      if MsgBox('This User Installer is not meant to be run as an Administrator. If you would like to install VS Code for all users in this system, download the System Installer instead from https://code.visualstudio.com. Are you sure you want to continue?', mbError, MB_OKCANCEL) = IDCANCEL then begin
++      if MsgBox('This User Installer is not meant to be run as an Administrator. If you would like to install {#NameShort} for all users on this system, use the System Installer from {#PublisherUrl}. Are you sure you want to continue?', mbError, MB_OKCANCEL) = IDCANCEL then begin
+         Result := False;
+       end;
+     end;

@@ -33,7 +33,9 @@
 				"${workspaceFolder}/.core/out/**/*.js"
 			],
 			"sourceMapPathOverrides": {
-				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*",
+				"${workspaceFolder}/.core/extensions/vshoon-start/*": "${workspaceFolder}/extensions/vshoon-start/*",
+				"${workspaceFolder}/.core/extensions/vshoon-ui-sample/*": "${workspaceFolder}/extensions/vshoon-ui-sample/*"
 			},
 			"presentation": {
 				"group": "1_vshoon",
@@ -58,7 +60,9 @@
 				"${workspaceFolder}/.core/out/**/*.js"
 			],
 			"sourceMapPathOverrides": {
-				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*",
+				"${workspaceFolder}/.core/extensions/vshoon-start/*": "${workspaceFolder}/extensions/vshoon-start/*",
+				"${workspaceFolder}/.core/extensions/vshoon-ui-sample/*": "${workspaceFolder}/extensions/vshoon-ui-sample/*"
 			},
 			"presentation": {
 				"group": "1_vshoon",
@@ -76,7 +80,9 @@
 				"${workspaceFolder}/.core/out/**/*.js"
 			],
 			"sourceMapPathOverrides": {
-				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*"
+				"${workspaceFolder}/.core/src/vs/vshoon/*": "${workspaceFolder}/src/vs/vshoon/*",
+				"${workspaceFolder}/.core/extensions/vshoon-start/*": "${workspaceFolder}/extensions/vshoon-start/*",
+				"${workspaceFolder}/.core/extensions/vshoon-ui-sample/*": "${workspaceFolder}/extensions/vshoon-ui-sample/*"
 			},
 			"presentation": {
 				"group": "1_vshoon",

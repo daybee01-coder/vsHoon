@@ -7,12 +7,36 @@
 		"committedAt": "2026-09-01T00:43:09Z"
 	},
 	"overlay": [
-		"src/vs/vshoon"
+		"src/vs/vshoon",
+		"extensions/vshoon-start",
+		"extensions/vshoon-ui-sample",
+		"resources/win32/VisualElementsManifest.xml",
+		"resources/win32/code.ico",
+		"resources/win32/code_70x70.png",
+		"resources/win32/code_150x150.png",
+		"resources/win32/inno-big-100.bmp",
+		"resources/win32/inno-big-125.bmp",
+		"resources/win32/inno-big-150.bmp",
+		"resources/win32/inno-big-175.bmp",
+		"resources/win32/inno-big-200.bmp",
+		"resources/win32/inno-big-225.bmp",
+		"resources/win32/inno-big-250.bmp",
+		"resources/win32/inno-small-100.bmp",
+		"resources/win32/inno-small-125.bmp",
+		"resources/win32/inno-small-150.bmp",
+		"resources/win32/inno-small-175.bmp",
+		"resources/win32/inno-small-200.bmp",
+		"resources/win32/inno-small-225.bmp",
+		"resources/win32/inno-small-250.bmp"
 	],
 	"patches": [
 		"VSH-0001-product-identity.patch",
 		"VSH-0002-start-window-seam.patch",
-		"VSH-0003-source-layers.patch"
+		"VSH-0003-source-layers.patch",
+		"VSH-0004-ui-extension-seam.patch",
+		"VSH-0005-ui-sample-build.patch",
+		"VSH-0006-windows-product-metadata.patch",
+		"VSH-0007-start-window-package.patch"
 	],
 	"$agentAssetsComment": "Files the core owns that are mirrored into the paths agent tooling looks for. \"from\" is relative to the core, \"to\" is relative to this repository. mode \"copy\" stores no path and survives a rename; mode \"link\" creates a junction whose absolute target breaks until the next sync.",
 	"agentAssets": [

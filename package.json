@@ -6,7 +6,9 @@
 	"description": "VShoon product sources, overlaid onto a pinned Code - OSS core.",
 	"scripts": {
 		"sync": "node scripts/sync-core.mjs",
+		"sync:check": "node scripts/check-sync.mjs",
 		"core": "node scripts/core-exec.mjs",
+		"brand:win32": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-win32-brand-assets.ps1",
 		"patch:save": "node scripts/save-patches.mjs",
 		"typecheck": "node scripts/core-exec.mjs run typecheck-client",
 		"transpile": "node scripts/core-exec.mjs run transpile-client",
@@ -16,6 +18,8 @@
 		"layers": "node scripts/core-exec.mjs run valid-layers-check",
 		"pretest": "node scripts/core-exec.mjs run transpile-client",
 		"test": "node scripts/core-exec.mjs exec -- mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit --runGlob \"**/vshoon/test/**/*.test.js\"",
+		"smoke:start-window": "node scripts/smoke-start-window.mjs",
+		"smoke:ui-extension": "node scripts/smoke-ui-extension.mjs",
 		"watch": "node scripts/overlay.mjs --watch"
 	}
 }

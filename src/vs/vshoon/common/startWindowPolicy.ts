@@ -8,6 +8,7 @@
  * Both the initial startup and a second instance are described by these flags.
  */
 export interface IVShoonLaunchRequest {
+	readonly disableStartWindow: boolean;
 	readonly hasExplicitTarget: boolean;
 	readonly hasProtocolUrl: boolean;
 	readonly hasSpecialFileMode: boolean;
@@ -33,6 +34,7 @@ export interface IVShoonSecondInstanceContext extends IVShoonLaunchRequest {
 
 export type VShoonStartWindowBypassReason =
 	| 'disabled'
+	| 'disabledByCli'
 	| 'notInitialStartup'
 	| 'notDesktopLaunch'
 	| 'explicitTarget'
@@ -60,6 +62,10 @@ export type VShoonSecondInstanceDecision =
  * The order is part of the contract so that logs and tests stay stable.
  */
 function findBypassReason(request: IVShoonLaunchRequest): VShoonStartWindowBypassReason | undefined {
+	if (request.disableStartWindow) {
+		return 'disabledByCli';
+	}
+
 	if (request.hasExplicitTarget) {
 		return 'explicitTarget';
 	}
@@ -98,6 +104,8 @@ function findBypassReason(request: IVShoonLaunchRequest): VShoonStartWindowBypas
 
 	return undefined;
 }
+
+export const VSHOON_START_WINDOW_ENABLED_SETTING = 'vshoon.startWindow.enabled';
 
 /**
  * Evaluates whether the compact start window should own the initial launch.

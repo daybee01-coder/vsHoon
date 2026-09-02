@@ -1,8 +1,8 @@
 diff --git a/product.json b/product.json
-index 47016c085d19..e38a8651d352 100644
+index 47016c085d19..fdcecbb16331 100644
 --- a/product.json
 +++ b/product.json
-@@ -1,39 +1,39 @@
+@@ -1,39 +1,44 @@
  {
 -	"nameShort": "Code - OSS",
 -	"nameLong": "Code - OSS",
@@ -12,6 +12,11 @@ index 47016c085d19..e38a8651d352 100644
 -	"win32MutexName": "vscodeoss",
 +	"nameShort": "VShoon",
 +	"nameLong": "VShoon",
++	"companyName": "VShoon Contributors",
++	"copyright": "Copyright (C) 2026 VShoon Contributors.",
++	"win32PublisherName": "VShoon Contributors",
++	"win32PublisherUrl": "https://github.com/daybee01-coder/vsHoon",
++	"win32SetupBaseName": "VShoonSetup",
 +	"applicationName": "vshoon",
 +	"dataFolderName": ".vshoon",
 +	"sharedDataFolderName": ".vshoon-shared",

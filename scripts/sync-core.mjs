@@ -189,7 +189,8 @@ function checkDebugOverrides() {
 	}
 
 	const contents = readFileSync(launchFile, 'utf8');
-	const missing = lock.overlay.filter(entry => !contents.includes(`/.core/${entry.split(sep).join('/')}/*`));
+	const debugOverlays = lock.overlay.filter(entry => entry.startsWith('src/') || entry.startsWith('extensions/'));
+	const missing = debugOverlays.filter(entry => !contents.includes(`/.core/${entry.split(sep).join('/')}/*`));
 	if (missing.length === 0) {
 		return;
 	}

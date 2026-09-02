@@ -25,6 +25,25 @@ export function mirrorOverlay({ quiet = false } = {}) {
 	for (const entry of lock.overlay) {
 		const source = join(repoRoot, entry);
 		const destination = join(coreDir, entry);
+		const sourceStat = statSync(source);
+
+		if (sourceStat.isFile()) {
+			const destinationStat = existsSync(destination) ? statSync(destination) : undefined;
+			if (destinationStat && destinationStat.size === sourceStat.size && Math.abs(destinationStat.mtimeMs - sourceStat.mtimeMs) < 1) {
+				continue;
+			}
+
+			if (destinationStat && destinationStat.mtimeMs > sourceStat.mtimeMs) {
+				stale.push(entry);
+			}
+
+			mkdirSync(dirname(destination), { recursive: true });
+			copyFileSync(source, destination);
+			utimesSync(destination, sourceStat.atime, sourceStat.mtime);
+			copied++;
+			continue;
+		}
+
 		const wanted = new Set();
 
 		for (const relativePath of walk(source)) {
@@ -78,14 +97,15 @@ export function watchOverlay() {
 
 	let pending;
 	for (const entry of lock.overlay) {
-		watch(join(repoRoot, entry), { recursive: true }, () => {
+		const source = join(repoRoot, entry);
+		watch(source, { recursive: statSync(source).isDirectory() }, () => {
 			clearTimeout(pending);
 			pending = setTimeout(() => mirrorOverlay(), 50);
 		});
 	}
 }
 
-function* walk(directory) {
+export function* walk(directory) {
 	if (!existsSync(directory)) {
 		return;
 	}

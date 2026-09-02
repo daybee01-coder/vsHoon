@@ -1,0 +1,15 @@
+diff --git a/src/vs/workbench/workbench.common.main.ts b/src/vs/workbench/workbench.common.main.ts
+index d325fcfb9492..fbdbf5296f32 100644
+--- a/src/vs/workbench/workbench.common.main.ts
++++ b/src/vs/workbench/workbench.common.main.ts
+@@ -44,6 +44,10 @@ import './browser/actions/widgetNavigationCommands.js';
+ import './services/actions/common/menusExtensionPoint.js';
+ import './api/common/configurationExtensionPoint.js';
+ import './api/browser/viewsExtensionPoint.js';
++import { ExtensionsRegistry } from './services/extensions/common/extensionsRegistry.js';
++import { registerVShoonUIExtensionPoint } from '../vshoon/browser/uiExtensionPoint.js';
++
++registerVShoonUIExtensionPoint(ExtensionsRegistry);
+ 
+ //#endregion
+ 
