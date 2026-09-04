@@ -7,19 +7,26 @@
 	"scripts": {
 		"sync": "node scripts/sync-core.mjs",
 		"sync:check": "node scripts/check-sync.mjs",
+		"sync:i18n": "node scripts/sync-language-packs.mjs",
+		"sync:monaco": "node scripts/sync-vsearch-monaco.mjs",
 		"core": "node scripts/core-exec.mjs",
-		"brand:win32": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-win32-brand-assets.ps1",
+		"brand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-brand-assets.ps1",
 		"patch:save": "node scripts/save-patches.mjs",
 		"typecheck": "node scripts/core-exec.mjs run typecheck-client",
 		"transpile": "node scripts/core-exec.mjs run transpile-client",
-		"build": "node scripts/core-exec.mjs run compile-client && node scripts/core-exec.mjs run gulp compile-extensions",
+		"build": "node scripts/sync-vsearch-monaco.mjs && node scripts/core-exec.mjs run compile-client && node scripts/core-exec.mjs run gulp compile-extensions",
 		"compile": "node scripts/core-exec.mjs run compile",
 		"lint": "node scripts/core-exec.mjs exec -- eslint src/vs/vshoon",
 		"layers": "node scripts/core-exec.mjs run valid-layers-check",
 		"pretest": "node scripts/core-exec.mjs run transpile-client",
 		"test": "node scripts/core-exec.mjs exec -- mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit --runGlob \"**/vshoon/test/**/*.test.js\"",
+		"test:dbconn": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-dbconn && node scripts/test-extension.mjs vshoon-dbconn",
+		"test:decom": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-decom",
+		"test:vsearch": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-vsearch && node scripts/test-extension.mjs vshoon-vsearch",
+		"test:scripts": "node --test scripts/test/*.test.mjs",
 		"smoke:start-window": "node scripts/smoke-start-window.mjs",
 		"smoke:ui-extension": "node scripts/smoke-ui-extension.mjs",
+		"smoke:modal-webviews": "node scripts/smoke-modal-webviews.mjs",
 		"watch": "node scripts/overlay.mjs --watch"
 	}
 }

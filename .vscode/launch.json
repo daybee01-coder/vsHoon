@@ -88,6 +88,105 @@
 				"group": "1_vshoon",
 				"order": 3
 			}
+		},
+
+		// The entries below build rather than debug. They are here because only launch
+		// configurations appear in the Run and Debug panel; `Terminal > Run Task` has the same
+		// commands plus the ordered sequences, and `Ctrl+Shift+B` runs the development build.
+		//
+		// `autoAttachChildProcesses` is off on purpose: the debugger would otherwise attach to
+		// every gulp and esbuild worker the build spawns and slow a nine-minute package build
+		// down for no benefit. Nothing here is meant to be stepped through.
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Build (dev)",
+			"cwd": "${workspaceFolder}",
+			"runtimeExecutable": "npm",
+			"windows": {
+				"runtimeExecutable": "npm.cmd"
+			},
+			"runtimeArgs": [
+				"run",
+				"build"
+			],
+			"autoAttachChildProcesses": false,
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"presentation": {
+				"group": "2_build",
+				"order": 1
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Package (win32-x64)",
+			"cwd": "${workspaceFolder}",
+			"runtimeExecutable": "npm",
+			"windows": {
+				"runtimeExecutable": "npm.cmd"
+			},
+			"runtimeArgs": [
+				"run",
+				"core",
+				"--",
+				"run",
+				"gulp",
+				"vscode-win32-x64"
+			],
+			"autoAttachChildProcesses": false,
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"presentation": {
+				"group": "2_build",
+				"order": 2
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Smoke Test (packaged)",
+			"cwd": "${workspaceFolder}",
+			"runtimeExecutable": "npm",
+			"windows": {
+				"runtimeExecutable": "npm.cmd"
+			},
+			"runtimeArgs": [
+				"run",
+				"smoke:start-window",
+				"--",
+				"--package",
+				"VSCode-win32-x64"
+			],
+			"autoAttachChildProcesses": false,
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"presentation": {
+				"group": "2_build",
+				"order": 3
+			}
+		},
+		{
+			"type": "node",
+			"request": "launch",
+			"name": "VShoon: Reset Core",
+			"cwd": "${workspaceFolder}",
+			"runtimeExecutable": "npm",
+			"windows": {
+				"runtimeExecutable": "npm.cmd"
+			},
+			"runtimeArgs": [
+				"run",
+				"sync"
+			],
+			"autoAttachChildProcesses": false,
+			"console": "integratedTerminal",
+			"internalConsoleOptions": "neverOpen",
+			"presentation": {
+				"group": "2_build",
+				"order": 4
+			}
 		}
 	]
 }

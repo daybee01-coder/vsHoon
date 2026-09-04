@@ -8,13 +8,15 @@
 		<link rel="stylesheet" href="./startWindow.css">
 	</head>
 	<body>
-		<main class="start-window" aria-labelledby="product-name">
+		<header class="window-titlebar" aria-hidden="true">
+			<img class="window-titlebar-mark" src="./vshoon-logo.png" alt="" width="16" height="16">
+			<span>VShoon</span>
+		</header>
+
+		<main class="start-window" aria-label="VShoon">
 			<header class="product-header">
-				<img class="product-mark" src="./vshoon-logo.png" alt="" width="52" height="52">
-				<div>
-					<h1 id="product-name">VShoon</h1>
-					<p id="product-subtitle"></p>
-				</div>
+				<img class="product-mark" src="./vshoon-logo.png" alt="" width="32" height="32">
+				<h1 id="product-name">VShoon</h1>
 			</header>
 
 			<section class="workspace" aria-labelledby="recent-title">
@@ -33,9 +35,10 @@
 			</section>
 
 			<footer class="actions">
-				<button id="quit" class="secondary" type="button"></button>
-				<button id="open-empty" class="secondary" type="button"></button>
-				<button id="open-workspace" class="secondary" type="button"></button>
+				<button id="quit" class="quiet" type="button"></button>
+				<span class="actions-gap"></span>
+				<button id="open-empty" class="quiet" type="button"></button>
+				<button id="open-workspace" class="quiet" type="button"></button>
 				<button id="open-folder" class="primary" type="button"></button>
 			</footer>
 

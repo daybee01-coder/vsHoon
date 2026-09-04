@@ -1,0 +1,360 @@
+{
+  "name": "vshoon-vssh",
+  "displayName": "VSsh",
+  "description": "폴더로 정리하는 세션 관리와 SFTP를 지원하는 SSH 리모트 터미널 확장 (PuTTY 세션 가져오기 지원)",
+  "version": "0.0.1",
+  "publisher": "vshoon",
+  "engines": {
+    "vscode": "^1.137.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "vshoon.ui.modalWebviews": [
+      {
+        "version": 1,
+        "viewType": "vsshSessionForm"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vssh",
+          "title": "VSsh",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "vssh-panel",
+          "title": "SFTP",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vssh": [
+        {
+          "id": "vssh.sessions",
+          "name": "Sessions"
+        }
+      ],
+      "vssh-panel": [
+        {
+          "id": "vssh.sftp",
+          "name": "SFTP",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "vssh.session.add",
+        "title": "새 세션 추가",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vssh.session.edit",
+        "title": "세션 편집",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vssh.session.delete",
+        "title": "세션 삭제",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vssh.session.connect",
+        "title": "연결",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "vssh.session.disconnect",
+        "title": "연결 해제",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "vssh.sessions.refresh",
+        "title": "세션 목록 새로고침",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vssh.session.folder.add",
+        "title": "새 폴더",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "vssh.session.folder.rename",
+        "title": "폴더 이름 변경",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vssh.session.folder.delete",
+        "title": "폴더 삭제",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vssh.session.copy",
+        "title": "세션 복사",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "vssh.session.cut",
+        "title": "세션 잘라내기",
+        "icon": "$(files)"
+      },
+      {
+        "command": "vssh.session.paste",
+        "title": "세션 붙여넣기",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "vssh.session.importFromPutty",
+        "title": "PuTTY에서 세션 가져오기",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "vssh.sftp.refresh",
+        "title": "새로고침",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vssh.sftp.changeUser",
+        "title": "SFTP 사용자 변경",
+        "icon": "$(account)"
+      },
+      {
+        "command": "vssh.sftp.followTerminal",
+        "title": "터미널 위치로 이동",
+        "icon": "$(target)"
+      },
+      {
+        "command": "vssh.sftp.toggleSync",
+        "title": "동기 탐색 켜기/끄기",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "vssh.sftp.toggleHidden",
+        "title": "숨김 파일 표시/숨김",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "vssh.sftp.toggleQueue",
+        "title": "전송 목록 표시/숨김",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "vssh.hostkey.manage",
+        "title": "호스트 키 관리"
+      },
+      {
+        "command": "vssh.wsl.open",
+        "title": "WSL 터미널 열기",
+        "icon": "$(terminal-linux)"
+      },
+      {
+        "command": "vssh.terminal.toggleBroadcast",
+        "title": "멀티세션 동시입력 켜기/끄기",
+        "icon": "$(broadcast)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vssh.session.add",
+          "when": "view == vssh.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "vssh.session.folder.add",
+          "when": "view == vssh.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "vssh.session.paste",
+          "when": "view == vssh.sessions && vssh.sessions.hasClipboard",
+          "group": "navigation"
+        },
+        {
+          "command": "vssh.sessions.refresh",
+          "when": "view == vssh.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "vssh.session.importFromPutty",
+          "when": "view == vssh.sessions",
+          "group": "2_import"
+        },
+        {
+          "command": "vssh.sftp.followTerminal",
+          "when": "view == vssh.sftp",
+          "group": "navigation@2"
+        },
+        {
+          "command": "vssh.sftp.refresh",
+          "when": "view == vssh.sftp",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vssh.sftp.changeUser",
+          "when": "view == vssh.sftp",
+          "group": "navigation@6"
+        },
+        {
+          "command": "vssh.sftp.toggleSync",
+          "when": "view == vssh.sftp",
+          "group": "navigation@3"
+        },
+        {
+          "command": "vssh.sftp.toggleHidden",
+          "when": "view == vssh.sftp",
+          "group": "navigation@4"
+        },
+        {
+          "command": "vssh.sftp.toggleQueue",
+          "when": "view == vssh.sftp",
+          "group": "navigation@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vssh.session.connect",
+          "when": "view == vssh.sessions && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "vssh.session.disconnect",
+          "when": "view == vssh.sessions && viewItem == sessionConnected",
+          "group": "inline"
+        },
+        {
+          "command": "vssh.session.connect",
+          "when": "view == vssh.sessions && viewItem == session",
+          "group": "1_connect"
+        },
+        {
+          "command": "vssh.session.disconnect",
+          "when": "view == vssh.sessions && viewItem == sessionConnected",
+          "group": "1_connect"
+        },
+        {
+          "command": "vssh.session.edit",
+          "when": "view == vssh.sessions && viewItem =~ /^session(Connected)?$/"
+        },
+        {
+          "command": "vssh.session.copy",
+          "when": "view == vssh.sessions && viewItem =~ /^session(Connected)?$/",
+          "group": "5_clipboard"
+        },
+        {
+          "command": "vssh.session.cut",
+          "when": "view == vssh.sessions && viewItem =~ /^session(Connected)?$/",
+          "group": "5_clipboard"
+        },
+        {
+          "command": "vssh.session.delete",
+          "when": "view == vssh.sessions && viewItem =~ /^session(Connected)?$/"
+        },
+        {
+          "command": "vssh.session.add",
+          "when": "view == vssh.sessions && viewItem == sessionFolder",
+          "group": "1_add"
+        },
+        {
+          "command": "vssh.session.folder.add",
+          "when": "view == vssh.sessions && viewItem == sessionFolder",
+          "group": "1_add"
+        },
+        {
+          "command": "vssh.session.paste",
+          "when": "view == vssh.sessions && viewItem == sessionFolder && vssh.sessions.hasClipboard",
+          "group": "5_clipboard"
+        },
+        {
+          "command": "vssh.session.folder.rename",
+          "when": "view == vssh.sessions && viewItem == sessionFolder"
+        },
+        {
+          "command": "vssh.session.folder.delete",
+          "when": "view == vssh.sessions && viewItem == sessionFolder"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "vssh.session.copy",
+        "key": "ctrl+c",
+        "when": "vssh.sessions.focused"
+      },
+      {
+        "command": "vssh.session.cut",
+        "key": "ctrl+x",
+        "when": "vssh.sessions.focused"
+      },
+      {
+        "command": "vssh.session.paste",
+        "key": "ctrl+v",
+        "when": "vssh.sessions.focused"
+      }
+    ],
+    "configuration": {
+      "title": "VSsh",
+      "properties": {
+        "vssh.terminal.fontFamily": {
+          "type": "string",
+          "default": "",
+          "description": "SSH 터미널에 적용할 폰트 (비워두면 VSCode 기본 터미널 폰트 사용). 적용 시 전역 terminal.integrated.fontFamily 설정에 반영됩니다."
+        },
+        "vssh.terminal.fontSize": {
+          "type": "number",
+          "default": 14,
+          "description": "SSH 터미널 폰트 크기. 적용 시 전역 terminal.integrated.fontSize 설정에 반영됩니다."
+        },
+        "vssh.terminal.encoding": {
+          "type": "string",
+          "enum": [
+            "UTF-8",
+            "EUC-KR",
+            "CP949"
+          ],
+          "default": "UTF-8",
+          "description": "기본 터미널 문자 인코딩 (세션별 설정으로 덮어쓸 수 있음)"
+        },
+        "vssh.hostkey.strictChecking": {
+          "type": "boolean",
+          "default": true,
+          "description": "호스트 키가 저장된 값과 다를 경우 연결을 차단합니다."
+        },
+        "vssh.sftp.maxConcurrentTransfers": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "SFTP 전송 큐에서 동시에 처리할 파일 개수."
+        },
+        "vssh.sftp.preserveTimestamps": {
+          "type": "boolean",
+          "default": true,
+          "description": "파일 전송 시 원본의 권한과 수정 시각을 최대한 보존합니다 (서버가 허용하지 않으면 조용히 건너뜁니다)."
+        }
+      }
+    }
+  },
+  "activationEvents": [],
+  "scripts": {
+    "compile": "gulp compile-extension:vshoon-vssh",
+    "watch": "gulp watch-extension:vshoon-vssh"
+  },
+  "devDependencies": {
+    "@types/ssh2": "^1.15.5"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3",
+    "ppk-to-openssh": "^3.2.0",
+    "ssh2": "^1.16.0"
+  },
+  "license": "MIT"
+}

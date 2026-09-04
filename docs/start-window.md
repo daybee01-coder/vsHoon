@@ -151,6 +151,34 @@ workbench itself through `IWindowsMainService`, and closing it without choosing 
 
 두 번째 인스턴스가 시작 창을 밀어내는 경우에도 같은 순서를 따른다. `supersede()`는 창을 숨기고 소유권만 즉시 넘긴 뒤, 다른 창이 실제로 생길 때까지 기다렸다가 폐기한다.
 
+## Interface
+
+The launcher answers one question — which project? — so the window holds one surface and one
+primary action:
+
+- The project list sits directly on the window ground. There is no panel around it, because a
+  border and a fill around the only content on screen are chrome that says nothing.
+- The list heading stays visible as the Workbench-style section label, while its count is quiet
+  metadata. Both remain associated with the list for screen readers.
+- Of the four actions, only **Open Folder** is filled. The rest are text buttons at description
+  weight using the standard secondary-button states, and **Quit** sits alone at the leading edge
+  so that it is never mistaken for one of the ways into a project.
+- Each row's pin and remove actions appear on hover or keyboard focus. They keep their place in
+  the layout and in the tab order the whole time, so nothing shifts and nothing is hidden from a
+  screen reader.
+- Folder, workspace, pin and remove glyphs use the corresponding Codicon vector paths at the
+  standard base or compact icon tier.
+- `IThemeMainService` supplies the persisted base theme, background and foreground before the
+  recent list loads. The renderer uses the same dark, light and high-contrast interaction ramps
+  as the default Workbench themes and only follows the OS color scheme until that configuration
+  arrives.
+- On Windows, the native light title bar is replaced with Electron's window-controls overlay.
+  Its background and symbols use the same persisted theme colors, while the native minimize,
+  maximize and close behaviors remain intact. The product mark moves into this draggable area so
+  it is not repeated in the content.
+
+The window opens at 720×520 rather than filling the screen: it is a chooser, not a workspace.
+
 ## MVP Acceptance Criteria
 
 - No full workbench renderer is created before the launcher on an eligible launch.
@@ -172,10 +200,17 @@ surviving project, and cancelling a native picker restores the button that opene
 Focus outlines use separate light and dark contrast ramps and defer to system Highlight colors
 in forced-colors mode. `npm run smoke:start-window` launches the real sandbox renderer with an
 isolated empty profile and verifies its accessible button names, loading state, initial focus,
-and forward/reverse Tab movement through the Chrome accessibility and input protocols.
+visible section heading, applied base theme, and forward/reverse Tab movement through the Chrome
+accessibility and input protocols. It then opens an empty window and waits for the real Workbench
+DOM, failing on renderer exceptions. Isolating
+the profile means naming both `--user-data-dir` and `--shared-data-dir`: recent projects live in
+the shared application storage, which is keyed to the home directory, so without the second flag
+the launcher lists whatever the developer opened last and the assertions depend on it. The run
+also pins `--locale=en`, because the product's default display language is Korean and the
+assertions name English labels.
 
 The header carries the VShoon mark, `vshoon-logo.png`, generated next to the renderer by
-`npm run brand:win32` from the same `logo.png` the Windows icon comes from. It is decorative next
+`npm run brand` from the same `logo.png` the Windows icon comes from. It is decorative next
 to the product name, so it ships with an empty `alt` and stays out of the accessibility tree; the
 content security policy allows `img-src 'self'` and nothing else, and the smoke test asserts the
 image actually decodes so a missing packaging pattern or a tightened policy fails loudly.

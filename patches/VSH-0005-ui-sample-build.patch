@@ -1,11 +1,15 @@
 diff --git a/build/gulpfile.extensions.ts b/build/gulpfile.extensions.ts
-index dafca7f2adde..8ba7b415f570 100644
+index dafca7f2adde..3f8ae52837a6 100644
 --- a/build/gulpfile.extensions.ts
 +++ b/build/gulpfile.extensions.ts
-@@ -86,6 +86,7 @@ const compilations = [
+@@ -86,6 +86,11 @@ const compilations = [
  	'extensions/tunnel-forwarding/tsconfig.json',
  	'extensions/typescript-language-features/web/tsconfig.json',
  	'extensions/typescript-language-features/tsconfig.json',
++	'extensions/vshoon-dbconn/tsconfig.json',
++	'extensions/vshoon-decom/tsconfig.json',
++	'extensions/vshoon-vsearch/tsconfig.json',
++	'extensions/vshoon-vssh/tsconfig.json',
 +	'extensions/vshoon-ui-sample/tsconfig.json',
  	'extensions/vscode-api-tests/tsconfig.json',
  	'extensions/vscode-colorize-tests/tsconfig.json',

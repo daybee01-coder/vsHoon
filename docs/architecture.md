@@ -50,6 +50,33 @@ function. The VShoon module does not import Workbench modules in the opposite di
 accepts bundled extensions only; the registry and bridge do not expose DOM, CSS, assets, or renderer
 callbacks.
 
+DBConn adds a second bounded capability without exposing a new extension-host API:
+
+```text
+extensions/vshoon-dbconn package.json
+  -> vshoon.ui.modalWebviews (bundled extensions only)
+  -> validated source-id/view-type registry
+  -> MainThreadWebviewPanels selects MODAL_GROUP
+  -> upstream ModalEditorPart owns focus trapping, accessibility and dismissal
+```
+
+The extension continues to create an ordinary `WebviewPanel`. VShoon changes only its target
+editor group after matching both the bundled extension identifier and declared view type. On an
+ordinary VS Code build the unknown contribution is ignored and the same panel opens in a regular
+editor tab. Database credentials remain inside the existing webview-to-extension message path;
+the product registry receives identifiers only.
+
+VShoon's bundled `vshoon-start` enables the simplified-dialog route, but local `file` requests are
+delegated to `VShoonFileDialog`: a product-owned modal with a branded heading, path field,
+back/forward/home/parent/refresh actions, a lazily expanded directory tree, and explicit
+open/save/cancel actions. It uses Codicons and Workbench theme variables. Remote and virtual file
+systems continue through upstream `SimpleFileDialog`. The manifest also defaults
+`workbench.iconTheme` to built-in `vs-seti`; a user's icon-theme choice still wins.
+
+`extensions/vshoon-decom` is a bundled extension overlay. It keeps the original custom editor and
+commands, while its `adm-zip` runtime dependency is supplied by the shared built-in-extension
+dependency tree pinned in `.core/extensions/package-lock.json`.
+
 ## Compatibility Strategy
 
 VShoon-specific behavior is gated by product configuration and a user/CLI opt-out. With the gate disabled, execution must follow upstream behavior. Each upstream modification is recorded in `docs/upstream-patches.md` and tested at the smallest applicable scope.

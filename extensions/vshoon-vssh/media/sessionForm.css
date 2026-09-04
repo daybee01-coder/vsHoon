@@ -1,0 +1,151 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  padding: 16px 20px;
+  /* 창 크기는 VSCode API로 지정할 수 없다. 대신 폼을 카드로 묶어 가운데 두면 남는 공간이
+     아래쪽에만 몰리지 않아 빈 여백이 덜 눈에 띈다. safe를 붙여야 창이 내용보다 짧을 때
+     위쪽이 잘리지 않고 스크롤된다. */
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+}
+
+h1 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 11px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.row .field {
+  margin-bottom: 0;
+}
+
+.port {
+  width: 120px;
+  flex: none;
+}
+
+.grow {
+  flex: 1;
+}
+
+label {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+input[type='text'],
+input[type='number'],
+input[type='password'],
+select {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  /* 명령 팔레트(quick input) 위젯과 같은 6px 라운드 */
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: inherit;
+  width: 100%;
+}
+
+input:focus,
+select:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+input[readonly] {
+  opacity: 0.8;
+}
+
+fieldset {
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  padding: 6px 12px 8px;
+  margin: 0 0 11px;
+}
+
+legend {
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  padding: 0 4px;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1em;
+  color: var(--vscode-foreground);
+  margin: 3px 0;
+}
+
+button {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  /* 입력칸(6px)과 나란히 놓이는 "찾아보기" 버튼이 겉돌지 않게 같은 라운드를 쓴다. */
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+button.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+button.secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+  font-size: 0.9em;
+  min-height: 1.2em;
+}

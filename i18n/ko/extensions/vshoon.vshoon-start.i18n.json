@@ -1,0 +1,15 @@
+{
+	"": [
+		"VShoon owns this extension, so no upstream language pack carries its manifest strings.",
+		"`npm run sync:i18n` copies this file into the generated pack, named by the translation id",
+		"the extension scanner looks up: `<publisher>.<name>`."
+	],
+	"contents": {
+		"package": {
+			"displayName": "VShoon 시작 창",
+			"description": "VShoon 시작 창의 동작을 결정하는 설정을 기여합니다.",
+			"configuration.title": "VShoon",
+			"configuration.enabled.description": "열 파일, 폴더, 작업 영역 없이 VShoon을 실행할 때 시작 창을 표시합니다. 비활성화하면 그런 실행도 Workbench를 바로 엽니다. 한 번만 시작 창을 건너뛰려면 `--disable-start-window`를 사용합니다."
+		}
+	}
+}

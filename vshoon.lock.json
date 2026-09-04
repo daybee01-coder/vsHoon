@@ -8,8 +8,14 @@
 	},
 	"overlay": [
 		"src/vs/vshoon",
+		"src/vs/workbench/browser/media/code-icon.svg",
 		"extensions/vshoon-start",
+		"extensions/vshoon-dbconn",
+		"extensions/vshoon-decom",
+		"extensions/vshoon-vssh",
+		"extensions/vshoon-vsearch",
 		"extensions/vshoon-ui-sample",
+		"extensions/vshoon-language-pack-ko",
 		"resources/win32/VisualElementsManifest.xml",
 		"resources/win32/code.ico",
 		"resources/win32/code_70x70.png",
@@ -36,8 +42,24 @@
 		"VSH-0004-ui-extension-seam.patch",
 		"VSH-0005-ui-sample-build.patch",
 		"VSH-0006-windows-product-metadata.patch",
-		"VSH-0007-start-window-package.patch"
+		"VSH-0007-start-window-package.patch",
+		"VSH-0008-default-locale.patch",
+		"VSH-0009-unsigned-gallery.patch",
+		"VSH-0010-modal-webviews.patch",
+		"VSH-0011-file-dialog-seam.patch"
 	],
+	"$languagePacksComment": "Display language translations. They are Microsoft's, MIT licensed, and released on their own schedule, so they are pinned and fetched like the core rather than committed. `npm run sync:i18n` regenerates the built-in packs.",
+	"languagePacks": {
+		"repository": "https://github.com/microsoft/vscode-loc.git",
+		"commit": "94ca43a21bc568ae981a74601ccbc37d0dfdd1b4",
+		"languages": [
+			{
+				"id": "ko",
+				"source": "i18n/vscode-language-pack-ko",
+				"extension": "extensions/vshoon-language-pack-ko"
+			}
+		]
+	},
 	"$agentAssetsComment": "Files the core owns that are mirrored into the paths agent tooling looks for. \"from\" is relative to the core, \"to\" is relative to this repository. mode \"copy\" stores no path and survives a rename; mode \"link\" creates a junction whose absolute target breaks until the next sync.",
 	"agentAssets": [
 		{

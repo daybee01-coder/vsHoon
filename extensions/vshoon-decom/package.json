@@ -1,0 +1,116 @@
+{
+  "name": "vshoon-decom",
+  "displayName": "Decom - JAR/Class Decompiler",
+  "description": "JAR/Class 파일을 디컴파일하여 열람하고, JAR 내부 리소스/라이브러리를 수정한 뒤 다시 JAR에 저장할 수 있는 VSCode 확장",
+  "version": "0.1.0",
+  "publisher": "vshoon",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.137.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "decom.classViewer",
+        "displayName": "Decom: 디컴파일된 Class (읽기 전용)",
+        "selector": [{ "filenamePattern": "*.class" }],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "decom.openJar",
+        "title": "Decom: JAR 파일 열기 (디컴파일)",
+        "icon": "$(package)"
+      },
+      {
+        "command": "decom.viewClassFile",
+        "title": "Decom: Class 파일 디컴파일하여 보기 (읽기 전용)"
+      },
+      {
+        "command": "decom.saveToJar",
+        "title": "Decom: 변경사항을 JAR에 저장",
+        "icon": "$(save)"
+      },
+      {
+        "command": "decom.refreshJar",
+        "title": "Decom: JAR 다시 추출 (새로고침)"
+      },
+      {
+        "command": "decom.closeJar",
+        "title": "Decom: JAR 마운트 해제"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "decom.openJar" },
+        { "command": "decom.viewClassFile" },
+        { "command": "decom.saveToJar", "when": "decom.activeFolderMounted" },
+        { "command": "decom.refreshJar", "when": "decom.activeFolderMounted" },
+        { "command": "decom.closeJar", "when": "decom.activeFolderMounted" }
+      ],
+      "explorer/context": [
+        {
+          "command": "decom.openJar",
+          "when": "resourceExtname == .jar",
+          "group": "decom@1"
+        },
+        {
+          "command": "decom.saveToJar",
+          "when": "explorerResourceIsRoot",
+          "group": "decom@2"
+        },
+        {
+          "command": "decom.refreshJar",
+          "when": "explorerResourceIsRoot",
+          "group": "decom@2"
+        },
+        {
+          "command": "decom.closeJar",
+          "when": "explorerResourceIsRoot",
+          "group": "decom@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Decom",
+      "properties": {
+        "decom.cfr.jarPath": {
+          "type": "string",
+          "default": "",
+          "description": "CFR 디컴파일러 jar 경로를 직접 지정합니다. 비워두면 확장이 자동으로 다운로드하여 관리합니다."
+        },
+        "decom.java.executable": {
+          "type": "string",
+          "default": "java",
+          "description": "CFR 디컴파일 실행에 사용할 java 실행 파일 경로입니다."
+        },
+        "decom.classpath.extra": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "디컴파일 시 CFR에 추가로 전달할 classpath 목록 (더 정확한 디컴파일을 위해 외부 참조 jar/디렉터리 지정)."
+        },
+        "decom.cfr.options": {
+          "type": "string",
+          "default": "",
+          "description": "CFR 실행 시 추가로 전달할 CLI 옵션 문자열 (예: \"--decodelambdas false\")."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "gulp compile-extension:vshoon-decom",
+    "watch": "gulp watch-extension:vshoon-decom"
+  },
+  "devDependencies": {},
+  "dependencies": {
+    "adm-zip": "^0.6.0"
+  }
+}

@@ -5,12 +5,10 @@
 
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { connect, createSmokeProfile, delay, dispatchKey, evaluate, findFreePort, removeSmokeProfile, retainTail, waitForExit, waitForPageTarget } from './smoke-driver.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const coreRoot = join(repoRoot, '.core');
@@ -27,7 +25,8 @@ if (!executable || !existsSync(executable)) {
 		: 'The start-window smoke test currently requires a built Windows development executable. Run `npm run build` first.');
 }
 
-const smokeRoot = mkdtempSync(join(tmpdir(), 'vshoon-start-window-smoke-'));
+const smokePrefix = 'vshoon-start-window-smoke-';
+const smokeRoot = createSmokeProfile(smokePrefix);
 const debuggingPort = await findFreePort();
 const environment = { ...process.env };
 if (packageRoot) {
@@ -48,7 +47,17 @@ try {
 	child = spawn(executable, [
 		...(packageRoot ? [] : [coreRoot]),
 		`--user-data-dir=${smokeRoot}`,
+
+		// Recent projects live in the shared application storage, which is keyed to the home
+		// directory rather than the user data directory: without this the launcher would list
+		// whatever the developer opened last and the assertions below would depend on it.
+		`--shared-data-dir=${join(smokeRoot, 'shared')}`,
 		`--remote-debugging-port=${debuggingPort}`,
+
+		// The assertions below name English labels, and VShoon ships a Korean display language by
+		// default. `--locale` outranks every other source, so the test reads the same on any
+		// machine and in any profile state.
+		'--locale=en',
 		'--no-cached-data',
 		'--log=trace'
 	], {
@@ -61,7 +70,7 @@ try {
 	child.stdout.on('data', data => output = retainTail(output, data.toString()));
 	child.stderr.on('data', data => output = retainTail(output, data.toString()));
 
-	const target = await waitForStartWindowTarget(debuggingPort, child);
+	const target = await waitForPageTarget(debuggingPort, child, candidate => candidate.url.includes('/vs/vshoon/electron-sandbox/startWindow/startWindow.html'), 'VShoon start-window renderer');
 	client = await connect(target.webSocketDebuggerUrl);
 	await client.send('Runtime.enable');
 	await client.send('Accessibility.enable');
@@ -78,18 +87,34 @@ try {
 			emptyVisible: !document.getElementById('empty-state')?.hidden,
 			markLoaded: mark?.naturalWidth > 0,
 			language: document.documentElement.lang,
+			theme: document.documentElement.dataset.vscodeTheme,
+			background: getComputedStyle(document.body).backgroundColor,
+			customTitleBar: document.body.classList.contains('custom-titlebar'),
+			titleBarDisplay: getComputedStyle(document.querySelector('.window-titlebar')).display,
+			titleBarBorderBottomWidth: getComputedStyle(document.querySelector('.window-titlebar')).borderBottomWidth,
+			actionsNearBottom: window.innerHeight - document.querySelector('.actions').getBoundingClientRect().bottom < 60,
+			sectionTitle: document.getElementById('recent-title')?.textContent,
+			sectionHeadingDisplay: getComputedStyle(document.querySelector('.section-heading')).display,
 			buttons: Array.from(document.querySelectorAll('footer button')).map(button => ({ id: button.id, name: button.textContent }))
 		};
 	})()`);
 
-	const { language, ...stableState } = state;
+	const { language, theme, background, ...stableState } = state;
 	assert.match(language, /^[A-Za-z]{2}(?:-|$)/);
+	assert.match(theme, /^(?:vs|vs-dark|hc-black|hc-light)$/);
+	assert.match(background, /^rgba?\(/);
 	assert.deepStrictEqual(stableState, {
 		activeId: 'open-folder',
 		busy: 'false',
 		describedBy: 'recent-navigation-help',
 		emptyVisible: true,
 		markLoaded: true,
+		customTitleBar: true,
+		titleBarDisplay: 'flex',
+		titleBarBorderBottomWidth: '0px',
+		actionsNearBottom: true,
+		sectionTitle: 'Recent Projects',
+		sectionHeadingDisplay: 'flex',
 		buttons: [
 			{ id: 'quit', name: 'Quit' },
 			{ id: 'open-empty', name: 'New Empty Window' },
@@ -98,9 +123,9 @@ try {
 		]
 	});
 
-	await dispatchTab(client, true);
+	await dispatchKey(client, { key: 'Tab', code: 'Tab', modifiers: 8 });
 	assert.strictEqual(await evaluate(client, 'document.activeElement?.id'), 'open-workspace');
-	await dispatchTab(client, false);
+	await dispatchKey(client, { key: 'Tab', code: 'Tab' });
 	assert.strictEqual(await evaluate(client, 'document.activeElement?.id'), 'open-folder');
 
 	const accessibilityTree = await client.send('Accessibility.getFullAXTree');
@@ -110,10 +135,29 @@ try {
 		.filter(name => typeof name === 'string');
 	assert.deepStrictEqual(accessibleButtons, ['Quit', 'New Empty Window', 'Open Workspace', 'Open Folder']);
 
-	await evaluate(client, "document.getElementById('quit')?.click()");
-	await waitForExit(child, 10_000);
+	await evaluate(client, "document.getElementById('open-empty')?.click()");
+	client.close();
+	client = undefined;
 
-	console.log('[vshoon] start-window smoke: brand mark, accessibility and keyboard focus passed');
+	const workbenchTarget = await waitForPageTarget(debuggingPort, child, candidate => candidate.url.includes('workbench/workbench.html') || candidate.url.includes('workbench/workbench-dev.html'), 'VShoon Workbench renderer');
+	client = await connect(workbenchTarget.webSocketDebuggerUrl);
+	await client.send('Runtime.enable');
+	await waitForWorkbenchReady(client);
+
+	const workbenchState = await evaluate(client, `({
+		ready: Boolean(document.querySelector('.monaco-workbench')),
+		bodyChildren: document.body.childElementCount,
+		title: document.title
+	})`);
+	assert.strictEqual(workbenchState.ready, true, `Workbench did not initialize: ${JSON.stringify(workbenchState)}`);
+
+	// A workbench that loses a contribution still renders, so the shell being up proves less than
+	// it looks like. This has already happened once: removing the Copilot onboarding contribution
+	// left `IOnboardingService` unregistered, and the startup page runner — a constructor
+	// dependency away — stopped being created, with only this log line to show for it.
+	assert.deepStrictEqual(await readContributionHealth(smokeRoot), { logsRead: true, failures: [] });
+
+	console.log('[vshoon] start-window smoke: launcher accessibility, Workbench transition and contribution health passed');
 } catch (error) {
 	if (output) {
 		console.error(output);
@@ -128,109 +172,10 @@ try {
 	}
 
 	try {
-		await removeSmokeRoot(smokeRoot);
+		await removeSmokeProfile(smokeRoot, smokePrefix);
 	} catch (error) {
 		console.error(`[vshoon] unable to remove smoke profile ${smokeRoot}:`, error);
 	}
-}
-
-async function findFreePort() {
-	const server = createServer();
-	server.listen(0, '127.0.0.1');
-	await once(server, 'listening');
-	const address = server.address();
-	const port = typeof address === 'object' && address ? address.port : undefined;
-	server.close();
-	await once(server, 'close');
-
-	if (!port) {
-		throw new Error('Unable to reserve a DevTools port.');
-	}
-
-	return port;
-}
-
-async function waitForStartWindowTarget(port, processHandle) {
-	const deadline = Date.now() + 20_000;
-	while (Date.now() < deadline) {
-		if (processHandle.exitCode !== null) {
-			throw new Error(`VShoon exited before the start window appeared (${processHandle.exitCode}).`);
-		}
-
-		try {
-			const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-			const targets = await response.json();
-			const target = targets.find(candidate => candidate.type === 'page' && candidate.url.includes('/vs/vshoon/electron-sandbox/startWindow/startWindow.html'));
-			if (target?.webSocketDebuggerUrl) {
-				return target;
-			}
-		} catch {
-			// Electron has not opened the DevTools endpoint yet.
-		}
-
-		await delay(100);
-	}
-
-	throw new Error('Timed out waiting for the VShoon start-window renderer.');
-}
-
-async function connect(url) {
-	const socket = new WebSocket(url);
-	await new Promise((resolveOpen, rejectOpen) => {
-		socket.addEventListener('open', resolveOpen, { once: true });
-		socket.addEventListener('error', rejectOpen, { once: true });
-	});
-
-	let requestId = 0;
-	const pending = new Map();
-	socket.addEventListener('close', () => {
-		for (const request of pending.values()) {
-			request.reject(new Error('The DevTools connection closed.'));
-		}
-		pending.clear();
-	});
-	socket.addEventListener('message', event => {
-		const message = JSON.parse(event.data);
-		if (!message.id) {
-			return;
-		}
-
-		const request = pending.get(message.id);
-		if (!request) {
-			return;
-		}
-
-		pending.delete(message.id);
-		if (message.error) {
-			request.reject(new Error(message.error.message));
-		} else {
-			request.resolve(message.result);
-		}
-	});
-
-	return {
-		close: () => socket.close(),
-		send: (method, params = {}) => new Promise((resolveRequest, rejectRequest) => {
-			const id = ++requestId;
-			pending.set(id, { resolve: resolveRequest, reject: rejectRequest });
-			socket.send(JSON.stringify({ id, method, params }));
-		})
-	};
-}
-
-async function evaluate(connection, expression) {
-	const result = await connection.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-	if (result.exceptionDetails) {
-		throw new Error(result.exceptionDetails.text);
-	}
-
-	return result.result.value;
-}
-
-async function dispatchTab(connection, reverse) {
-	const modifiers = reverse ? 8 : 0;
-	await connection.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', modifiers });
-	await connection.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', modifiers });
 }
 
 async function waitForRendererReady(connection) {
@@ -246,42 +191,73 @@ async function waitForRendererReady(connection) {
 	throw new Error('Timed out waiting for the recent-project model to render.');
 }
 
-async function waitForExit(processHandle, timeout) {
-	if (processHandle.exitCode !== null) {
-		return;
-	}
+async function waitForWorkbenchReady(connection) {
+	const deadline = Date.now() + 20_000;
+	while (Date.now() < deadline) {
+		if (connection.exceptions.length > 0) {
+			throw new Error(`Workbench renderer exception: ${connection.exceptions.join('\n')}`);
+		}
 
-	await Promise.race([
-		once(processHandle, 'exit'),
-		delay(timeout).then(() => { throw new Error('Timed out waiting for VShoon to exit.'); })
-	]);
-}
-
-function delay(milliseconds) {
-	return new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
-}
-
-function retainTail(current, addition) {
-	return `${current}${addition}`.slice(-8_000);
-}
-
-async function removeSmokeRoot(path) {
-	const resolvedPath = resolve(path);
-	const resolvedTemp = resolve(tmpdir());
-	if (!isAbsolute(resolvedPath) || !resolvedPath.startsWith(`${resolvedTemp}\\`) || !basename(resolvedPath).startsWith('vshoon-start-window-smoke-')) {
-		throw new Error(`Refusing to remove unexpected smoke path: ${resolvedPath}`);
-	}
-
-	for (let attempt = 0; attempt < 10; attempt++) {
-		try {
-			rmSync(resolvedPath, { recursive: true, force: true, maxRetries: 2, retryDelay: 200 });
+		if (await evaluate(connection, "Boolean(document.querySelector('.monaco-workbench'))")) {
 			return;
-		} catch (error) {
-			if (attempt === 9) {
-				throw error;
-			}
+		}
 
-			await delay(500);
+		await delay(50);
+	}
+
+	throw new Error('Timed out waiting for the Workbench to initialize.');
+}
+
+/**
+ * Reports every workbench contribution the renderer failed to create.
+ *
+ * Failing to instantiate a contribution is written to the log and nowhere else: no renderer
+ * exception, no missing DOM, nothing a smoke test would notice on its own. `logsRead` is part of
+ * the result because the renderer writes its log a moment after the DOM appears, and a check that
+ * reads no log at all would pass for the wrong reason.
+ */
+
+async function readContributionHealth(profileRoot) {
+	const deadline = Date.now() + 10_000;
+	let logs = [];
+	while (Date.now() < deadline) {
+		logs = logFiles(join(profileRoot, 'logs')).filter(file => file.endsWith('renderer.log'));
+		if (logs.length > 0) {
+			break;
+		}
+
+		await delay(100);
+	}
+
+	const failures = [];
+	for (const file of logs) {
+		for (const line of readFileSync(file, 'utf8').split('\n')) {
+			if (line.includes('Unable to create workbench contribution')) {
+				failures.push(line.trim());
+			}
 		}
 	}
+
+	return { logsRead: logs.length > 0, failures };
+}
+
+function logFiles(directory) {
+	let entries;
+	try {
+		entries = readdirSync(directory, { withFileTypes: true });
+	} catch {
+		return [];
+	}
+
+	const files = [];
+	for (const entry of entries) {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...logFiles(path));
+		} else if (entry.isFile() && statSync(path).size > 0) {
+			files.push(path);
+		}
+	}
+
+	return files;
 }

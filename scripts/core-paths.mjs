@@ -23,12 +23,12 @@ export function readLock() {
  * Runs git with LFS smudging disabled. The core carries ~271 MB of LFS test fixtures that
  * VShoon never builds or runs, and they are only ever needed as pointer files here.
  */
-export function git(args, { cwd = coreDir, capture = false } = {}) {
+export function git(args, { cwd = coreDir, capture = false, silent = false, env } = {}) {
 	return execFileSync('git', args, {
 		cwd,
 		encoding: 'utf8',
-		stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
-		env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' }
+		stdio: capture ? ['ignore', 'pipe', silent ? 'pipe' : 'inherit'] : ['ignore', silent ? 'pipe' : 'inherit', silent ? 'pipe' : 'inherit'],
+		env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1', ...env }
 	});
 }
 

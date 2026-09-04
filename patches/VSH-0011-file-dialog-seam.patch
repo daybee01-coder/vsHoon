@@ -1,0 +1,35 @@
+diff --git a/src/vs/workbench/services/dialogs/browser/abstractFileDialogService.ts b/src/vs/workbench/services/dialogs/browser/abstractFileDialogService.ts
+index 8786b4ed5f66..63bb9506ae38 100644
+--- a/src/vs/workbench/services/dialogs/browser/abstractFileDialogService.ts
++++ b/src/vs/workbench/services/dialogs/browser/abstractFileDialogService.ts
+@@ -14,6 +14,7 @@ import * as resources from '../../../../base/common/resources.js';
+ import { isAbsolute as localPathIsAbsolute, normalize as localPathNormalize } from '../../../../base/common/path.js';
+ import { IInstantiationService, } from '../../../../platform/instantiation/common/instantiation.js';
+ import { ISimpleFileDialog, SimpleFileDialog } from './simpleFileDialog.js';
++import { VShoonFileDialog } from '../../../../vshoon/browser/fileDialog/vshoonFileDialog.js';
+ import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
+ import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+ import { IFileService } from '../../../../platform/files/common/files.js';
+@@ -323,16 +324,19 @@ export abstract class AbstractFileDialogService implements IFileDialogService {
+ 		return this.pickResource(options);
+ 	}
+ 
+-	protected getSimpleFileDialog(): ISimpleFileDialog {
++	protected getSimpleFileDialog(options?: IOpenDialogOptions | ISaveDialogOptions): ISimpleFileDialog {
++		if (options?.availableFileSystems?.length === 1 && options.availableFileSystems[0] === Schemas.file && !('canSelectMany' in options && options.canSelectMany)) {
++			return this.instantiationService.createInstance(VShoonFileDialog);
++		}
+ 		return this.instantiationService.createInstance(SimpleFileDialog);
+ 	}
+ 
+ 	private pickResource(options: IOpenDialogOptions): Promise<URI[] | undefined> {
+-		return this.getSimpleFileDialog().showOpenDialog(options);
++		return this.getSimpleFileDialog(options).showOpenDialog(options);
+ 	}
+ 
+ 	private saveRemoteResource(options: ISaveDialogOptions): Promise<URI | undefined> {
+-		return this.getSimpleFileDialog().showSaveDialog(options);
++		return this.getSimpleFileDialog(options).showSaveDialog(options);
+ 	}
+ 
+ 	/**

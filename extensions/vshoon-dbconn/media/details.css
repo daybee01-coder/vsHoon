@@ -1,0 +1,261 @@
+:root {
+  --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+/* ── 머리말 ────────────────────────────────────────────────────────────── */
+
+#head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+#identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#name {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 600;
+  font-family: var(--vscode-editor-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.82em;
+}
+
+#source {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+#actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+button {
+  padding: 3px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── 본문 ──────────────────────────────────────────────────────────────── */
+
+#content {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 12px 16px 32px;
+}
+
+.placeholder {
+  padding: 16px 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.comment {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--vscode-focusBorder);
+  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.08));
+  white-space: pre-wrap;
+}
+
+.note {
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--vscode-editorWarning-foreground, #cca700);
+  background: rgba(128, 128, 128, 0.08);
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.92em;
+}
+
+.note.error {
+  border-left-color: var(--vscode-errorForeground);
+  color: var(--vscode-errorForeground);
+}
+
+/* ── 구획 ──────────────────────────────────────────────────────────────── */
+
+.section {
+  margin-bottom: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.section-toggle {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.section-toggle:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.inline-button {
+  padding: 1px 8px;
+  font-size: 0.85em;
+}
+
+.section-body.hidden {
+  display: none;
+}
+
+/* ── 속성 ──────────────────────────────────────────────────────────────── */
+
+.attributes {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 16px;
+  align-items: baseline;
+}
+
+.attr-label {
+  color: var(--vscode-descriptionForeground);
+}
+
+.attr-value {
+  font-family: var(--vscode-editor-font-family);
+  overflow-wrap: anywhere;
+}
+
+/* ── 표 ────────────────────────────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(var(--vscode-font-size) - 1px);
+}
+
+th,
+td {
+  padding: 3px 8px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: var(--vscode-keybindingTable-headerBackground, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+tbody tr:nth-child(even) {
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.06));
+}
+
+tbody tr:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+td {
+  font-family: var(--vscode-editor-font-family);
+}
+
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-textLink-foreground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+button.link:hover {
+  background: none;
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ── 정의 ──────────────────────────────────────────────────────────────── */
+
+.definition {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.08));
+  overflow: auto;
+  max-height: 60vh;
+  font-family: var(--vscode-editor-font-family);
+  font-size: calc(var(--vscode-font-size) - 1px);
+  white-space: pre;
+  user-select: text;
+}

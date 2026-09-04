@@ -47,6 +47,7 @@ if (checkCoreCheckout()) {
 	const owners = patchOwners(present, { onConflict: problem });
 	checkPatchDrift(owners);
 	checkOverlayDrift();
+	checkLanguagePacks();
 	checkAgentAssets();
 
 	if (candidateRef) {
@@ -176,6 +177,30 @@ function checkOverlayDrift() {
 	}
 
 	console.log(`[vshoon] overlay: ${compared} files in sync`);
+}
+
+/** The generated language packs are not committed, so a fresh checkout has to build them. */
+function checkLanguagePacks() {
+	const config = lock.languagePacks;
+	if (!config?.languages?.length) {
+		return;
+	}
+
+	for (const { id, extension } of config.languages) {
+		if (!existsSync(join(repoRoot, extension, 'package.json'))) {
+			problem(`the ${id} language pack is missing from ${extension}. Run \`npm run sync:i18n\`.`);
+		}
+	}
+
+	const cacheDir = join(repoRoot, '.i18n');
+	if (!existsSync(join(cacheDir, '.git'))) {
+		return;
+	}
+
+	const head = git(['rev-parse', 'HEAD'], { cwd: cacheDir, capture: true, silent: true }).trim();
+	if (head !== config.commit) {
+		problem(`the translation checkout is at ${head.slice(0, 10)} but vshoon.lock.json pins ${config.commit.slice(0, 10)}. Run \`npm run sync:i18n\`.`);
+	}
 }
 
 function checkAgentAssets() {

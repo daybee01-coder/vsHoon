@@ -1,0 +1,59 @@
+diff --git a/src/main.ts b/src/main.ts
+index 085290ba0d7e..2073637815b0 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -16,6 +16,7 @@ import { parse } from './vs/base/common/jsonc.js';
+ import { getUserDataPath } from './vs/platform/environment/node/userDataPath.js';
+ import * as perf from './vs/base/common/performance.js';
+ import { resolveNLSConfiguration } from './vs/base/node/nls.js';
++import { seedVShoonLanguagePacks } from './vs/vshoon/node/languagePackSeed.js';
+ import { getUNCHost, addUNCHostToAllowlist } from './vs/base/node/unc.js';
+ import { INLSConfiguration } from './vs/nls.js';
+ import { NativeParsedArgs } from './vs/platform/environment/common/argv.js';
+@@ -129,13 +130,20 @@ let nlsConfigurationPromise: Promise<INLSConfiguration> | undefined = undefined;
+ const osLocale = processZhLocale((app.getPreferredSystemLanguages()?.[0] ?? 'en').toLowerCase());
+ const userLocale = getUserDefinedLocale(argvConfig);
+ if (userLocale) {
+-	nlsConfigurationPromise = resolveNLSConfiguration({
+-		userLocale,
+-		osLocale,
+-		commit: product.commit,
+-		userDataPath,
+-		nlsMetadataPath: import.meta.dirname
+-	});
++
++	// VShoon: the language pack index is normally written by the shared process, which only starts
++	// once a workbench window does, so a first run would resolve to English no matter which packs
++	// the product ships — the launcher, the first screen anyone sees, most visibly. Seeding the
++	// packs VShoon ships closes that gap; upstream rewrites the file from the installed extensions
++	// as soon as the shared process runs.
++	nlsConfigurationPromise = seedVShoonLanguagePacks(userDataPath, path.join(import.meta.dirname, '..', 'extensions'))
++		.then(() => resolveNLSConfiguration({
++			userLocale,
++			osLocale,
++			commit: product.commit,
++			userDataPath,
++			nlsMetadataPath: import.meta.dirname
++		}));
+ }
+ 
+ // Pass in the locale to Electron so that the
+@@ -732,7 +740,17 @@ function getUserDefinedLocale(argvConfig: IArgvConfig): string | undefined {
+ 		return locale.toLowerCase(); // a directly provided --locale always wins
+ 	}
+ 
+-	return typeof argvConfig?.locale === 'string' ? argvConfig.locale.toLowerCase() : undefined;
++	if (typeof argvConfig?.locale === 'string') {
++		return argvConfig.locale.toLowerCase();
++	}
++
++	// VShoon: with no locale chosen, upstream leaves the display language to Electron, which this
++	// file pins to `en` on Windows a few lines above — so a product whose users are not English
++	// speakers never starts in their language, however many language packs it ships. Stating a
++	// product default here keeps every choice above it intact: `--locale` and a language picked
++	// through "Configure Display Language" both land in the branches before this one, and
++	// clearing that preference deliberately returns to the product default.
++	return product.vshoonDefaultLocale?.toLowerCase();
+ }
+ 
+ //#endregion

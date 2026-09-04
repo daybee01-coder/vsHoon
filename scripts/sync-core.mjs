@@ -3,8 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { coreDir, fail, git, readLock, repoRoot } from './core-paths.mjs';
 import { mirrorOverlay } from './overlay.mjs';
 
@@ -17,6 +19,7 @@ console.log(`[vshoon] path ${coreDir}`);
 fetchCore();
 resetToPinnedCommit();
 applyPatches();
+generateLanguagePacks();
 mirrorOverlay();
 mirrorAgentAssets();
 checkDebugOverrides();
@@ -42,11 +45,15 @@ function fetchCore() {
 		// there, so the ~271 MB of LFS fixtures stay pointer files.
 		git(['config', 'filter.lfs.smudge', 'git-lfs smudge --skip -- %f']);
 		git(['config', 'filter.lfs.process', 'git-lfs filter-process --skip']);
-
-		// The overlay and installed dependencies live inside the core but are not part of it.
-		const excludes = [...lock.overlay, 'node_modules', 'out', '.build'].map(entry => `/${entry}`);
-		appendFileSync(join(coreDir, '.git', 'info', 'exclude'), `\n# VShoon\n${excludes.join('\n')}\n`);
 	}
+
+	// The overlay and installed dependencies live inside the core but are not part of it. This is
+	// rewritten on every sync, so an overlay entry added later is excluded too.
+	writeExcludeBlock(
+		join(coreDir, '.git', 'info', 'exclude'),
+		'vshoon overlay',
+		[...lock.overlay, 'node_modules', 'out', '.build']
+	);
 
 	git(['remote', 'set-url', 'origin', repository]);
 
@@ -61,7 +68,7 @@ function fetchCore() {
 
 function isPinnedCommitPresent() {
 	try {
-		return git(['cat-file', '-t', commit], { capture: true }).trim() === 'commit';
+		return git(['cat-file', '-t', commit], { capture: true, silent: true }).trim() === 'commit';
 	} catch {
 		return false;
 	}
@@ -87,6 +94,22 @@ function applyPatches() {
 			fail(`${name} did not apply to ${commit.slice(0, 10)}.\n` +
 				`Resolve it in ${coreDir}, then run \`npm run patch:save\` to rewrite the patch.`);
 		}
+	}
+}
+
+/**
+ * Regenerates the built-in language packs before the overlay is mirrored, because the overlay
+ * copies the generated extension into the core and would otherwise carry a stale one.
+ */
+function generateLanguagePacks() {
+	if (!lock.languagePacks?.languages?.length) {
+		return;
+	}
+
+	const script = fileURLToPath(new URL('./sync-language-packs.mjs', import.meta.url));
+	const result = spawnSync(process.execPath, [script], { stdio: 'inherit' });
+	if (result.status !== 0) {
+		fail('the language packs could not be generated.');
 	}
 }
 
@@ -150,8 +173,13 @@ function ignoreAgentAssets(paths) {
 		return; // not a Git checkout, so there is nothing to ignore
 	}
 
-	const begin = '# >>> vshoon agent assets';
-	const end = '# <<< vshoon agent assets';
+	writeExcludeBlock(excludeFile, 'vshoon agent assets', paths);
+}
+
+/** Replaces one marked block in an exclude file, leaving anything else in it alone. */
+function writeExcludeBlock(excludeFile, marker, paths) {
+	const begin = `# >>> ${marker}`;
+	const end = `# <<< ${marker}`;
 	const current = existsSync(excludeFile) ? readFileSync(excludeFile, 'utf8') : '';
 	const beginIndex = current.indexOf(begin);
 	const endIndex = current.indexOf(end);

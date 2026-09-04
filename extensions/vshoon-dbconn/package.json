@@ -1,0 +1,993 @@
+{
+  "name": "vshoon-dbconn",
+  "displayName": "DBConn — SQL Client for MySQL/MariaDB/PostgreSQL/Oracle",
+  "description": "VS Code 통합 데이터베이스 클라이언트. 스키마 인식 자동완성, 커서 위치 쿼리 실행, 하단 결과 그리드, 누수 없는 커넥션 풀/트랜잭션 관리.",
+  "version": "0.1.0",
+  "publisher": "vshoon",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.137.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Programming Languages",
+    "Data Science",
+    "Other"
+  ],
+  "keywords": [
+    "sql",
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "oracle",
+    "database"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:sql"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "신뢰되지 않은 워크스페이스에서는 워크스페이스 설정에 정의된 연결 프로필을 무시합니다."
+    }
+  },
+  "contributes": {
+    "vshoon.ui.modalWebviews": [
+      {
+        "version": 1,
+        "viewType": "dbconn.connectionForm"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dbconn",
+          "title": "Database",
+          "icon": "resources/database.svg"
+        }
+      ]
+    },
+    "views": {
+      "dbconn": [
+        {
+          "id": "dbconn.connections",
+          "name": "연결"
+        },
+        {
+          "id": "dbconn.history",
+          "name": "쿼리 이력",
+          "visibility": "collapsed"
+        }
+      ],
+      "panel": [
+        {
+          "id": "dbconn.results",
+          "name": "쿼리 결과",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "dbconn.connections",
+        "contents": "등록된 데이터베이스 연결이 없습니다.\n[연결 추가](command:dbconn.addConnection)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "dbconn.addConnection",
+        "title": "커넥션 추가",
+        "category": "DBConn",
+        "icon": "$(add)"
+      },
+      {
+        "command": "dbconn.addConnectionFromUrl",
+        "title": "URL 로 커넥션 추가",
+        "category": "DBConn",
+        "icon": "$(link)"
+      },
+      {
+        "command": "dbconn.copyConnectionUrl",
+        "title": "연결 URL 복사",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.editConnection",
+        "title": "편집",
+        "category": "DBConn",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "dbconn.renameConnection",
+        "title": "이름 변경",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.renameTreeItem",
+        "title": "이름 변경",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.deleteConnection",
+        "title": "삭제",
+        "category": "DBConn",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "dbconn.addFolder",
+        "title": "폴더 추가",
+        "category": "DBConn",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "dbconn.renameFolder",
+        "title": "폴더 이름 변경",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.deleteFolder",
+        "title": "폴더 삭제",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.moveToFolder",
+        "title": "폴더로 이동",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.testConnection",
+        "title": "연결 테스트",
+        "category": "DBConn",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "dbconn.connect",
+        "title": "연결",
+        "category": "DBConn",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "dbconn.disconnect",
+        "title": "연결 해제",
+        "category": "DBConn",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "dbconn.refreshTree",
+        "title": "새로고침",
+        "category": "DBConn",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dbconn.newQuery",
+        "title": "새 SQL 편집기",
+        "category": "DBConn",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "dbconn.showQueryHistory",
+        "title": "쿼리 실행 이력",
+        "category": "DBConn",
+        "icon": "$(history)"
+      },
+      {
+        "command": "dbconn.refreshHistory",
+        "title": "이력 새로고침",
+        "category": "DBConn",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dbconn.history.insert",
+        "title": "편집기에 넣기",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.history.openInEditor",
+        "title": "새 편집기로 열기",
+        "category": "DBConn",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "dbconn.history.copy",
+        "title": "SQL 복사",
+        "category": "DBConn",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "dbconn.history.remove",
+        "title": "이력에서 삭제",
+        "category": "DBConn",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "dbconn.clearQueryHistory",
+        "title": "쿼리 실행 이력 지우기",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.openSavedQuery",
+        "title": "보관된 쿼리 열기",
+        "category": "DBConn",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "dbconn.openQueryFolder",
+        "title": "쿼리 보관 폴더 열기",
+        "category": "DBConn",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "dbconn.openRecentScript",
+        "title": "최근 SQL 편집기 열기",
+        "category": "DBConn",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "dbconn.openCachedScript",
+        "title": "캐시된 SQL 초안 열기",
+        "category": "DBConn",
+        "icon": "$(save-as)"
+      },
+      {
+        "command": "dbconn.clearScriptCache",
+        "title": "SQL 초안 캐시 비우기",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.setActiveConnection",
+        "title": "활성 커넥션 선택",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.setEditorConnection",
+        "title": "이 편집기의 연결 지정",
+        "category": "DBConn",
+        "icon": "$(database)"
+      },
+      {
+        "command": "dbconn.setRowLimit",
+        "title": "결과 행 제한 변경",
+        "category": "DBConn",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "dbconn.executeStatement",
+        "title": "커서 위치 쿼리 실행",
+        "category": "DBConn",
+        "icon": "$(play)"
+      },
+      {
+        "command": "dbconn.executeAll",
+        "title": "전체(또는 선택 영역) 실행",
+        "category": "DBConn",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "dbconn.explainStatement",
+        "title": "실행 계획 보기",
+        "category": "DBConn",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "dbconn.explainAnalyzeStatement",
+        "title": "실행 계획 측정 (실제 실행)",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.cancelQuery",
+        "title": "실행 중인 쿼리 취소",
+        "category": "DBConn",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "dbconn.toggleAutoCommit",
+        "title": "자동 커밋 전환",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.commit",
+        "title": "커밋",
+        "category": "DBConn",
+        "icon": "$(check)"
+      },
+      {
+        "command": "dbconn.rollback",
+        "title": "롤백",
+        "category": "DBConn",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "dbconn.selectTop",
+        "title": "상위 200건 조회",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.showObjectDetails",
+        "title": "상세 정보",
+        "category": "DBConn",
+        "icon": "$(info)"
+      },
+      {
+        "command": "dbconn.treeItemActivate",
+        "title": "트리 항목 열기",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.copyConnection",
+        "title": "복사",
+        "category": "DBConn",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "dbconn.pasteConnection",
+        "title": "붙여넣기",
+        "category": "DBConn",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "dbconn.copyTreeItem",
+        "title": "복사",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.copyName",
+        "title": "이름 복사",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.showPoolStats",
+        "title": "커넥션 풀 진단",
+        "category": "DBConn"
+      },
+      {
+        "command": "dbconn.showLog",
+        "title": "로그 보기",
+        "category": "DBConn"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "dbconn.addConnection",
+          "when": "view == dbconn.connections",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dbconn.addFolder",
+          "when": "view == dbconn.connections",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dbconn.addConnectionFromUrl",
+          "when": "view == dbconn.connections",
+          "group": "2_edit"
+        },
+        {
+          "command": "dbconn.refreshTree",
+          "when": "view == dbconn.connections",
+          "group": "navigation@3"
+        },
+        {
+          "command": "dbconn.showPoolStats",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.openSavedQuery",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.openQueryFolder",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.openRecentScript",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.openCachedScript",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.showQueryHistory",
+          "when": "view == dbconn.connections",
+          "group": "1_diag"
+        },
+        {
+          "command": "dbconn.pasteConnection",
+          "when": "view == dbconn.connections",
+          "group": "2_edit"
+        },
+        {
+          "command": "dbconn.showQueryHistory",
+          "when": "view == dbconn.history",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dbconn.refreshHistory",
+          "when": "view == dbconn.history",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dbconn.clearQueryHistory",
+          "when": "view == dbconn.history",
+          "group": "1_edit"
+        },
+        {
+          "command": "dbconn.setRowLimit",
+          "when": "view == dbconn.results",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dbconn.connect",
+          "when": "view == dbconn.connections && viewItem == connection.disconnected",
+          "group": "inline@1"
+        },
+        {
+          "command": "dbconn.disconnect",
+          "when": "view == dbconn.connections && viewItem == connection.connected",
+          "group": "inline@1"
+        },
+        {
+          "command": "dbconn.connect",
+          "when": "view == dbconn.connections && viewItem == connection.disconnected",
+          "group": "1_conn@1"
+        },
+        {
+          "command": "dbconn.disconnect",
+          "when": "view == dbconn.connections && viewItem == connection.connected",
+          "group": "1_conn@2"
+        },
+        {
+          "command": "dbconn.testConnection",
+          "when": "view == dbconn.connections && viewItem == connection.disconnected",
+          "group": "1_conn@0"
+        },
+        {
+          "command": "dbconn.editConnection",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "1_mod@1"
+        },
+        {
+          "command": "dbconn.renameConnection",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "1_mod@2"
+        },
+        {
+          "command": "dbconn.deleteConnection",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "1_mod@3"
+        },
+        {
+          "command": "dbconn.moveToFolder",
+          "when": "view == dbconn.connections && viewItem =~ /^connection./",
+          "group": "1_move@0"
+        },
+        {
+          "command": "dbconn.addConnection",
+          "when": "view == dbconn.connections && viewItem == group",
+          "group": "inline@1"
+        },
+        {
+          "command": "dbconn.addFolder",
+          "when": "view == dbconn.connections && viewItem == group",
+          "group": "inline@2"
+        },
+        {
+          "command": "dbconn.renameFolder",
+          "when": "view == dbconn.connections && viewItem == group",
+          "group": "1_mod@1"
+        },
+        {
+          "command": "dbconn.deleteFolder",
+          "when": "view == dbconn.connections && viewItem == group",
+          "group": "1_mod@2"
+        },
+        {
+          "command": "dbconn.newQuery",
+          "when": "view == dbconn.connections && viewItem == connection.connected",
+          "group": "2_query@1"
+        },
+        {
+          "command": "dbconn.openRecentScript",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "2_query@2"
+        },
+        {
+          "command": "dbconn.openSavedQuery",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "2_query@3"
+        },
+        {
+          "command": "dbconn.showObjectDetails",
+          "when": "view == dbconn.connections && viewItem =~ /^(table|view|sequence|function|procedure|package|synonym|type|column)$/",
+          "group": "2_query@0"
+        },
+        {
+          "command": "dbconn.selectTop",
+          "when": "view == dbconn.connections && viewItem =~ /^(table|view)$/",
+          "group": "2_query@1"
+        },
+        {
+          "command": "dbconn.copyConnection",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "1_mod@4"
+        },
+        {
+          "command": "dbconn.pasteConnection",
+          "when": "view == dbconn.connections && (viewItem =~ /^connection\\./ || viewItem == group)",
+          "group": "1_mod@5"
+        },
+        {
+          "command": "dbconn.copyName",
+          "when": "view == dbconn.connections",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "dbconn.copyConnectionUrl",
+          "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
+          "group": "9_copy@2"
+        },
+        {
+          "command": "dbconn.history.openInEditor",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "inline@1"
+        },
+        {
+          "command": "dbconn.history.copy",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "inline@2"
+        },
+        {
+          "command": "dbconn.history.remove",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "inline@3"
+        },
+        {
+          "command": "dbconn.history.insert",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "1_use@1"
+        },
+        {
+          "command": "dbconn.history.openInEditor",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "1_use@2"
+        },
+        {
+          "command": "dbconn.history.copy",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "dbconn.history.remove",
+          "when": "view == dbconn.history && viewItem == historyEntry",
+          "group": "2_edit@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "dbconn.executeStatement",
+          "when": "editorLangId == sql",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dbconn.executeAll",
+          "when": "editorLangId == sql",
+          "group": "navigation@2"
+        },
+        {
+          "command": "dbconn.cancelQuery",
+          "when": "editorLangId == sql && dbconn.running",
+          "group": "navigation@3"
+        },
+        {
+          "command": "dbconn.explainStatement",
+          "when": "editorLangId == sql",
+          "group": "navigation@4"
+        },
+        {
+          "command": "dbconn.setEditorConnection",
+          "when": "editorLangId == sql",
+          "group": "navigation@5"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "dbconn.executeStatement",
+          "when": "editorLangId == sql",
+          "group": "dbconn@1"
+        },
+        {
+          "command": "dbconn.executeAll",
+          "when": "editorLangId == sql",
+          "group": "dbconn@2"
+        },
+        {
+          "command": "dbconn.explainStatement",
+          "when": "editorLangId == sql",
+          "group": "dbconn@3"
+        },
+        {
+          "command": "dbconn.openRecentScript",
+          "when": "editorLangId == sql",
+          "group": "dbconn@4"
+        },
+        {
+          "command": "dbconn.openSavedQuery",
+          "when": "editorLangId == sql",
+          "group": "dbconn@6"
+        },
+        {
+          "command": "dbconn.setEditorConnection",
+          "when": "editorLangId == sql",
+          "group": "dbconn@5"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "dbconn.treeItemActivate",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.renameTreeItem",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.copyTreeItem",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.history.insert",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.history.openInEditor",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.history.copy",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.history.remove",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "dbconn.executeStatement",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "dbconn.executeAll",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "dbconn.cancelQuery",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape",
+        "when": "dbconn.running"
+      },
+      {
+        "command": "dbconn.explainStatement",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "dbconn.renameTreeItem",
+        "key": "f2",
+        "when": "focusedView == dbconn.connections"
+      },
+      {
+        "command": "dbconn.copyTreeItem",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "focusedView == dbconn.connections && !inputFocus"
+      },
+      {
+        "command": "dbconn.pasteConnection",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "focusedView == dbconn.connections && !inputFocus"
+      }
+    ],
+    "configuration": {
+      "title": "DBConn",
+      "properties": {
+        "dbconn.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "SQL 자동 완성 사용."
+        },
+        "dbconn.completion.keywordCase": {
+          "type": "string",
+          "enum": [
+            "upper",
+            "lower",
+            "preserve"
+          ],
+          "default": "upper",
+          "description": "자동 완성으로 삽입되는 키워드의 대소문자."
+        },
+        "dbconn.completion.maxMetadataItems": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 100,
+          "description": "자동 완성에 사용할 최대 메타데이터 항목 수."
+        },
+        "dbconn.edit.confirmEachChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "그리드에서 값을 바꾸거나 행을 지울 때마다 생성된 SQL 을 보여주고 확인받습니다."
+        },
+        "dbconn.edit.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "결과 그리드에서 셀 값 수정과 행 삭제를 허용합니다. 단일 테이블 조회이고 기본 키가 결과에 포함된 경우에만 활성화됩니다."
+        },
+        "dbconn.execution.autoCommit": {
+          "type": "boolean",
+          "default": true,
+          "description": "기본 자동 커밋 여부. 끄면 수동 트랜잭션 모드로 동작합니다."
+        },
+        "dbconn.execution.confirmDestructive": {
+          "type": "boolean",
+          "default": true,
+          "description": "WHERE 절 없는 UPDATE/DELETE, DROP/TRUNCATE 등 위험 구문 실행 전 확인합니다."
+        },
+        "dbconn.execution.maxRows": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 1,
+          "maximum": 100000,
+          "markdownDescription": "한 번의 실행에서 클라이언트로 가져올 최대 행 수. 초과분은 잘리며 결과 패널에 표시됩니다."
+        },
+        "dbconn.execution.autoLoadMore": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "결과 그리드를 맨 아래까지 스크롤하면 다음 묶음을 이어서 조회합니다. 끄면 툴바의 `더 불러오기`/쪽 이동 단추로만 가져옵니다."
+        },
+        "dbconn.execution.maxLoadedRows": {
+          "type": "number",
+          "default": 50000,
+          "minimum": 1000,
+          "maximum": 1000000,
+          "markdownDescription": "스크롤로 자동 조회할 때 한 결과에 쌓아 둘 행 수 상한. 여기에 닿으면 자동 조회를 멈춥니다(`더 불러오기` 단추로는 계속 가져올 수 있습니다)."
+        },
+        "dbconn.execution.productionGuard": {
+          "type": "string",
+          "enum": [
+            "type-to-confirm",
+            "confirm",
+            "off"
+          ],
+          "enumDescriptions": [
+            "경고를 보여준 뒤 대상 이름을 직접 입력해야 실행합니다 (권장).",
+            "경고 대화상자에서 한 번 확인합니다.",
+            "추가 확인을 하지 않습니다 (일반 위험 구문 확인은 그대로 적용)."
+          ],
+          "default": "type-to-confirm",
+          "markdownDescription": "환경이 **운영**인 연결에서 데이터·스키마를 바꾸는 구문을 실행할 때의 확인 강도입니다. 위험도와 무관하게 모든 변경 구문에 적용됩니다."
+        },
+        "dbconn.execution.queryTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "description": "쿼리 실행 타임아웃(ms). 초과 시 서버 측 취소를 시도합니다."
+        },
+        "dbconn.history.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "실행한 SQL 과 결과 요약(시각·소요·행 수·오류)을 이력으로 남깁니다. 결과 데이터는 저장하지 않습니다."
+        },
+        "dbconn.history.maxEntries": {
+          "type": "number",
+          "default": 200,
+          "minimum": 10,
+          "maximum": 2000,
+          "description": "보관할 실행 이력 건수."
+        },
+        "dbconn.history.retentionDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "description": "실행 이력 보관 기간(일). 0이면 기간 제한 없이 건수 제한만 적용합니다."
+        },
+        "dbconn.log.level": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info",
+          "description": "출력 채널 로그 수준."
+        },
+        "dbconn.metadata.estimateRows": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "테이블 목록에 **예상 행 수**를 함께 읽습니다. **MySQL/MariaDB 에서는 켜지 마세요** — `information_schema.TABLES.TABLE_ROWS` 는 `innodb_stats_on_metadata` 가 켜져 있으면 스키마 안 모든 테이블의 통계를 다시 표집해, 운영 인스턴스가 눈에 띄게 느려집니다. PostgreSQL·Oracle 은 저장된 통계를 읽을 뿐이라 부담이 없습니다."
+        },
+        "dbconn.metadata.prefetch": {
+          "type": "string",
+          "enum": [
+            "off",
+            "default-schema",
+            "all"
+          ],
+          "enumDescriptions": [
+            "미리 읽지 않습니다. 자동 완성을 부르거나 트리를 펼칠 때 그 스키마만 읽습니다.",
+            "기본 스키마 하나만 미리 읽습니다. (권장)",
+            "사용자 스키마를 최대 12개까지 미리 읽습니다. 큰 인스턴스에서는 서버에 부담이 됩니다."
+          ],
+          "default": "default-schema",
+          "markdownDescription": "자동 완성을 위해 스키마 정보를 **미리** 읽는 범위. 여기서 읽는 양이 곧 서버에 주는 부하입니다. 운영으로 표시한 연결은 이 설정과 무관하게 연결 직후 미리 읽기를 하지 않습니다."
+        },
+        "dbconn.metadata.cacheTtlMs": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 0,
+          "description": "스키마 메타데이터 캐시 유효 시간(ms). 0이면 캐시하지 않습니다."
+        },
+        "dbconn.pool.acquireTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "description": "풀에서 커넥션을 얻기까지 대기 한계(ms)."
+        },
+        "dbconn.pool.idleTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "유휴 커넥션 회수 시간(ms)."
+        },
+        "dbconn.pool.leaseTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 10000,
+          "markdownDescription": "커넥션 대여(lease) 최대 시간(ms). 초과한 대여는 좀비로 간주해 강제 회수합니다."
+        },
+        "dbconn.pool.max": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "연결당 최대 커넥션 수."
+        },
+        "dbconn.pool.maxLifetimeMs": {
+          "type": "number",
+          "default": 1800000,
+          "minimum": 60000,
+          "description": "커넥션 최대 수명(ms). 초과 시 재사용하지 않고 폐기합니다."
+        },
+        "dbconn.pool.min": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "연결당 최소 유휴 커넥션 수."
+        },
+        "dbconn.pool.transactionIdleTimeoutMs": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 30000,
+          "markdownDescription": "열린 트랜잭션이 이 시간 동안 유휴 상태면 자동 롤백 후 커넥션을 반환합니다."
+        },
+        "dbconn.scripts.newQueryLocation": {
+          "type": "string",
+          "enum": [
+            "folder",
+            "untitled"
+          ],
+          "enumDescriptions": [
+            "보관 폴더에 .sql 파일로 만들고 엽니다 (자동 저장됩니다).",
+            "예전처럼 저장되지 않은 이름 없는 문서로 엽니다."
+          ],
+          "default": "folder",
+          "markdownDescription": "`DBConn: 새 SQL 편집기` 가 쿼리를 어디에 만들지. 파일로 만들면 창을 닫아도 남고 다시 열 수 있습니다."
+        },
+        "dbconn.scripts.folder": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "쿼리 파일을 보관할 폴더. 비워 두면 홈 디렉터리의 `.vscode/dbconn/queries` 를 씁니다. `~` 는 홈 디렉터리로, 상대 경로는 워크스페이스 기준으로 풀립니다. (예: `D:/sql`, `~/queries`)"
+        },
+        "dbconn.scripts.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "보관 폴더 안의 SQL 파일을 편집이 멈춘 뒤 자동으로 저장합니다. 이 폴더의 파일에만 적용되며, 다른 파일의 저장 시점은 건드리지 않습니다."
+        },
+        "dbconn.scripts.cache": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "저장하지 않은 SQL 편집기 내용을 확장 저장소에 캐시해, 창을 닫거나 VS Code 가 종료돼도 다시 열 수 있게 합니다. 저장된 파일의 내용은 캐시하지 않습니다."
+        },
+        "dbconn.scripts.maxEntries": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 500,
+          "description": "보관할 SQL 초안 개수. 초과분은 오래된 것부터 지웁니다."
+        },
+        "dbconn.scripts.restore": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "auto",
+            "off"
+          ],
+          "enumDescriptions": [
+            "남은 초안이 있으면 알림으로 물어봅니다.",
+            "남은 초안을 최대 5개까지 자동으로 엽니다.",
+            "아무것도 하지 않습니다 (명령으로 직접 열 수 있습니다)."
+          ],
+          "default": "prompt",
+          "description": "시작할 때 이전 세션의 저장하지 않은 초안을 어떻게 처리할지."
+        },
+        "dbconn.scripts.retentionDays": {
+          "type": "number",
+          "default": 14,
+          "minimum": 0,
+          "description": "SQL 초안 보관 기간(일). 0이면 기간 제한 없이 개수 제한만 적용합니다."
+        },
+        "dbconn.security.allowInsecureTls": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**권장하지 않음.** TLS 인증서 검증 실패를 허용합니다. 자체 서명 인증서에는 CA 파일 지정을 사용하세요."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[sql]": {
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": false
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "gulp compile-extension:vshoon-dbconn",
+    "watch": "gulp watch-extension:vshoon-dbconn",
+    "test": "node --test \"out/**/*.test.js\""
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5",
+    "oracledb": "^6.7.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.17.10",
+    "@types/pg": "^8.11.10",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "devicon": "^2.17.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.67.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daybee01-coder/DBconn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/daybee01-coder/DBconn/issues"
+  },
+  "homepage": "https://github.com/daybee01-coder/DBconn#readme"
+}

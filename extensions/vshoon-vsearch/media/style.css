@@ -1,0 +1,610 @@
+:root {
+  --vs-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  /* 강조 색을 한 곳에서 관리해 목록 선택·버튼 활성·호버가 같은 계열로 보이게 한다. */
+  --vs-accent: var(--vscode-inputOption-activeBackground, rgba(0, 122, 204, 0.25));
+  --vs-accent-fg: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+  --vs-row-hover: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
+  --vs-row-active: var(--vs-accent);
+  --vs-row-active-fg: var(--vs-accent-fg);
+  --vs-match-bg: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  --vs-match-current-bg: var(--vscode-editor-findMatchBackground, rgba(234, 92, 0, 0.6));
+  --vs-editor-font: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+  --vs-editor-size: var(--vscode-editor-font-size, 13px);
+  --vs-line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* HTML 의 hidden 속성은 브라우저 기본 스타일로 display:none 이 되지만,
+   .field-row / .dir-group 처럼 display 를 직접 지정한 요소에서는 그 지정이 이겨서 숨겨지지 않는다.
+   hidden 은 "무조건 숨김"이 맞으므로 여기서 못박아 둔다. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* 검색 패널은 창(별도 Floating Window 또는 에디터 탭)을 꽉 채운다. */
+
+/* ---------------- 툴바 ---------------- */
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--vs-border);
+}
+
+/* ── 검색 / 바꾸기 입력 행 ───────────────────────────────
+   IntelliJ 처럼 테두리 없이 넓게 쓰고, 행 사이만 얇은 선으로 나눈다. */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vs-border);
+}
+
+/* 바꾸기 행 — 위에서 아래로 펼쳐지듯 나타난다.
+   hidden 속성을 쓰면 display:none 이라 전환이 걸리지 않으므로 클래스로 여닫는다. */
+.field-row.collapsible {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.16s ease, padding 0.16s ease, opacity 0.16s ease;
+}
+
+.field-row.collapsible.open {
+  max-height: 48px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-bottom-width: 1px;
+  opacity: 1;
+}
+
+/* VS Code 기본 아이콘(codicon).
+   폰트는 Monaco 의 editor.main.css 가 data URI 로 심어 둔 것을 그대로 쓴다.
+   (head 에서 그 CSS 를 먼저 link 해 두었기 때문에 툴바에서도 바로 쓸 수 있다) */
+.vs-icon {
+  display: inline-block;
+  font-family: codicon;
+  font-size: 16px;
+  line-height: 1;
+  font-style: normal;
+  font-weight: normal;
+  text-decoration: none;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.icon-search::before {
+  content: '\ea6d';
+}
+.icon-case-sensitive::before {
+  content: '\eab1';
+}
+.icon-whole-word::before {
+  content: '\eb7e';
+}
+.icon-regex::before {
+  content: '\eb38';
+}
+.icon-replace::before {
+  content: '\eb3d';
+}
+.icon-folder::before {
+  content: '\ea83';
+}
+.icon-close::before {
+  content: '\ea76';
+}
+.icon-chevron-down::before {
+  content: '\eab4';
+}
+
+.field-icon {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  margin-right: 4px;
+}
+
+.field-icon.glyph {
+  width: 15px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 15px;
+}
+
+.field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--vscode-input-foreground);
+  padding: 4px 2px;
+  font-family: inherit;
+  font-size: calc(var(--vscode-font-size) + 1px);
+}
+
+.field-input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+}
+
+.opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+}
+
+/* 돋보기 + 펼침 화살표 (최근 검색어) */
+.opt.with-caret {
+  min-width: 30px;
+  margin-right: 2px;
+}
+
+.opt .caret {
+  font-size: 11px;
+  margin-left: -2px;
+  opacity: 0.75;
+}
+
+.opt.caret-only {
+  min-width: 18px;
+  height: 20px;
+}
+
+.opt.caret-only .vs-icon {
+  font-size: 12px;
+}
+
+.opt:hover {
+  background: var(--vs-row-hover);
+  color: var(--vscode-foreground);
+}
+
+.opt.active {
+  background: var(--vs-accent);
+  color: var(--vs-accent-fg);
+}
+
+.opt-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--vs-border);
+  flex: 0 0 auto;
+}
+
+/* ── 디렉터리 경로 / 파일 마스크 행 ─────────────────────── */
+
+.scope-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 좌우 여백을 검색 행과 맞춰 폴더 버튼이 돋보기 아래에 세로로 정렬되게 한다. */
+  padding: 4px 12px;
+  /* 검색 행보다 한 단계 작은 글씨 (자식들이 상속받는다) */
+  font-size: calc(var(--vscode-font-size) - 1px);
+  flex-wrap: wrap;
+  row-gap: 5px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* 파일 마스크 + 최근 마스크 버튼 (검색 행 오른쪽 끝) */
+.mask-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--vs-border);
+  border-radius: 4px;
+  padding-right: 2px;
+  /* 검색어 입력보다 한 단계 작게 — 보조 입력이라는 것이 드러나게 */
+  font-size: calc(var(--vscode-font-size) - 1px);
+}
+
+.mask-wrap:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.file-mask {
+  /* 평소에는 좁게 두고, 입력할 때만 넓어진다. */
+  width: 62px;
+  transition: width 0.12s ease;
+  background: transparent;
+  border: none;
+  color: var(--vscode-input-foreground);
+  padding: 3px 8px;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.mask-wrap:focus-within .file-mask {
+  width: 180px;
+}
+
+/* 디렉터리 경로 (검색 행의 폴더 버튼을 켰을 때만 표시) */
+
+.dir-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 2px;
+}
+
+.dir-group input[type='text'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid var(--vs-border);
+  color: var(--vscode-input-foreground);
+  border-radius: 4px;
+  padding: 3px 8px;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.dir-group input[type='text']:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* 일반 버튼 — 옵션 버튼(.opt)과 같은 강조 색을 써서 톤을 맞춘다. */
+button.ghost {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vs-border);
+  border-radius: 5px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--vs-accent);
+  color: var(--vs-accent-fg);
+  border-color: var(--vscode-focusBorder);
+}
+
+button.ghost:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button.small {
+  padding: 2px 10px;
+  font-size: 11px;
+}
+
+/* 하단 주요 동작 버튼 */
+button.wide {
+  padding: 5px 18px;
+  font-size: var(--vscode-font-size);
+  min-width: 78px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* 창 맨 아래 상태 표시줄 — 결과 요약과 "에디터에서 열기" */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 버튼이 위아래로 꽉 끼지 않도록 여유를 둔다. */
+  padding: 9px 14px;
+  border-top: 1px solid var(--vs-border);
+  flex: 0 0 auto;
+  min-height: 50px;
+}
+
+.status {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 최근 검색어 / 마스크 / 바꿀 내용 / 찾기 드롭다운 */
+.history-popup {
+  position: fixed;
+  z-index: 100;
+  min-width: 110px;
+  max-width: 35vw;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vs-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  /* 검색 입력칸과 같은 글꼴·크기 */
+  font-family: var(--vscode-font-family);
+  font-size: calc(var(--vscode-font-size) + 1px);
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 12px;
+  cursor: pointer;
+}
+
+.history-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 기록에서 지우기 — 항목에 마우스를 올렸을 때만 보인다. */
+.history-del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.history-item:hover .history-del {
+  opacity: 0.7;
+}
+
+.history-del:hover {
+  opacity: 1;
+  background: var(--vs-row-hover);
+}
+
+.history-item:hover,
+.history-item.active {
+  background: var(--vs-row-active);
+  color: var(--vs-row-active-fg);
+}
+
+.status.error {
+  color: var(--vscode-errorForeground);
+}
+
+/* ---------------- 본문(결과 + 미리보기) ---------------- */
+
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.results {
+  /* 실제 높이는 main.js 의 applyResultsHeight() 가 창 크기에 맞춰 지정한다.
+     flex 컨테이너 안에서 자동으로 줄어들면 드래그로 지정한 높이가 무시되므로
+     flex: 0 0 auto 로 고정한다. (이게 빠져 있어 크기 조절이 먹지 않았다) */
+  flex: 0 0 auto;
+  height: 42vh;
+  min-height: 60px;
+  overflow: auto;
+  outline: none;
+  padding: 2px 0;
+}
+
+/* IntelliJ 처럼 파일 그룹 없이 평면 목록으로 보여준다.
+   왼쪽에 일치한 줄, 오른쪽 끝에 파일명과 줄 번호. */
+
+.match-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  /* 좌우 여백을 두고 모서리를 둥글게 해서, 호버·선택 배경이 알약 모양으로 보이게 한다. */
+  margin: 0 6px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.match-row:hover {
+  background: var(--vs-row-hover);
+}
+
+.match-row.selected {
+  background: var(--vs-row-active);
+  color: var(--vs-row-active-fg);
+}
+
+.match-row .line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--vs-editor-font);
+  font-size: var(--vs-editor-size);
+}
+
+.match-row .file-name {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.match-row .line-no {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  min-width: 28px;
+  text-align: right;
+}
+
+.match-row.selected .file-name,
+.match-row.selected .line-no {
+  color: var(--vs-row-active-fg);
+  opacity: 0.75;
+}
+
+mark {
+  background: var(--vs-match-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.match-row.selected mark {
+  background: var(--vs-match-current-bg);
+}
+
+.empty {
+  padding: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.splitter {
+  height: 7px;
+  flex: 0 0 auto;
+  cursor: row-resize;
+  background: var(--vs-border);
+  opacity: 0.6;
+  /* 포인터 드래그가 스크롤 제스처로 가로채이지 않게 한다. */
+  touch-action: none;
+}
+
+.splitter:hover,
+body.dragging .splitter {
+  background: var(--vscode-focusBorder);
+  opacity: 1;
+}
+
+/* 드래그 중에는 텍스트 선택과 미리보기 편집기의 마우스 반응을 끈다.
+   (드래그가 중간에 텍스트 선택으로 넘어가 끊기는 것을 막는다) */
+body.dragging {
+  user-select: none;
+  cursor: row-resize;
+}
+
+body.dragging .editor-wrap,
+body.dragging .results {
+  pointer-events: none;
+}
+
+/* ---------------- 미리보기 ---------------- */
+
+.preview {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--vs-border);
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vs-border);
+  flex: 0 0 auto;
+}
+
+.preview-path {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirty-dot {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  font-size: 10px;
+}
+
+/* Monaco 에디터가 들어가는 자리 */
+.editor-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 검색어와 일치하는 곳 강조 (Monaco decoration) */
+.vs-match {
+  background: var(--vs-match-bg);
+  border-radius: 2px;
+}
+
+.vs-match-current {
+  background: var(--vs-match-current-bg);
+  border-radius: 2px;
+}
+
+.preview-message {
+  padding: 8px 12px;
+  color: var(--vscode-descriptionForeground);
+  border-top: 1px solid var(--vs-border);
+  flex: 0 0 auto;
+}
+

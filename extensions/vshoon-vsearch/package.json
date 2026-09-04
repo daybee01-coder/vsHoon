@@ -1,0 +1,123 @@
+{
+  "name": "vshoon-vsearch",
+  "displayName": "VSearch - IntelliJ Style Find in Files",
+  "description": "IntelliJ IDEA의 Find in Path 처럼 동작하는 통합 검색/치환 패널",
+  "version": "0.1.1",
+  "publisher": "vshoon",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.137.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "vshoon.ui.modalWebviews": [
+      {
+        "version": 1,
+        "viewType": "vsearch.panel"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vsearch.open",
+        "title": "VSearch: 전체 검색 열기",
+        "category": "VSearch"
+      },
+      {
+        "command": "vsearch.openReplace",
+        "title": "VSearch: 전체 바꾸기 열기",
+        "category": "VSearch"
+      },
+      {
+        "command": "vsearch.searchInFolder",
+        "title": "VSearch: 이 폴더에서 검색",
+        "category": "VSearch"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vsearch.open",
+        "key": "shift shift"
+      },
+      {
+        "command": "vsearch.openReplace",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "vsearch.searchInFolder",
+          "group": "4_search@1",
+          "when": "explorerResourceIsFolder"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vsearch.searchInFolder",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VSearch",
+      "properties": {
+        "vsearch.maxFileSizeKb": {
+          "type": "number",
+          "default": 5120,
+          "description": "검색 대상 파일의 최대 크기(KB). 이보다 큰 파일은 건너뜁니다."
+        },
+        "vsearch.maxFiles": {
+          "type": "number",
+          "default": 20000,
+          "description": "검색 대상 파일 개수 상한."
+        },
+        "vsearch.maxResultFiles": {
+          "type": "number",
+          "default": 3000,
+          "description": "결과로 표시할 파일 개수 상한."
+        },
+        "vsearch.maxMatchesPerFile": {
+          "type": "number",
+          "default": 500,
+          "description": "파일 하나당 표시할 최대 일치 개수."
+        },
+        "vsearch.excludeGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "항상 제외할 glob 패턴 목록. files.exclude / search.exclude 설정에 추가로 적용됩니다."
+        },
+        "vsearch.autoSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "검색어 입력 중 자동으로 검색을 실행합니다."
+        },
+        "vsearch.saveAfterReplace": {
+          "type": "boolean",
+          "default": true,
+          "description": "바꾸기 실행 후 파일을 자동 저장합니다."
+        },
+        "vsearch.maxPreviewSizeKb": {
+          "type": "number",
+          "default": 2048,
+          "description": "미리보기에 로드할 최대 파일 크기(KB)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "gulp compile-extension:vshoon-vsearch",
+    "watch": "gulp watch-extension:vshoon-vsearch",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "monaco-editor": "^0.56.0"
+  }
+}

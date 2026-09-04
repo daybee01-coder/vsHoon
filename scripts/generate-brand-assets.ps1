@@ -1,12 +1,13 @@
 # VShoon owns the generated brand files. `logo.png` in the repository root is the
-# master artwork and the only source of truth; every Windows size and the start
-# window mark are regenerated from it.
+# master artwork and the only source of truth; every Windows size, the workbench
+# icon and the start window mark are regenerated from it.
 
 [CmdletBinding()]
 param(
 	[string]$MasterPath,
 	[string]$OutputDirectory,
-	[string]$StartWindowLogoPath
+	[string]$StartWindowLogoPath,
+	[string]$WorkbenchIconPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,12 +22,17 @@ if (-not $OutputDirectory) {
 if (-not $StartWindowLogoPath) {
 	$StartWindowLogoPath = Join-Path $PSScriptRoot '..\src\vs\vshoon\electron-sandbox\startWindow\vshoon-logo.png'
 }
+if (-not $WorkbenchIconPath) {
+	$WorkbenchIconPath = Join-Path $PSScriptRoot '..\src\vs\workbench\browser\media\code-icon.svg'
+}
 
 $resolvedMasterPath = (Resolve-Path -LiteralPath $MasterPath).Path
 $resolvedOutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $resolvedStartWindowLogoPath = [System.IO.Path]::GetFullPath($StartWindowLogoPath)
+$resolvedWorkbenchIconPath = [System.IO.Path]::GetFullPath($WorkbenchIconPath)
 [System.IO.Directory]::CreateDirectory($resolvedOutputDirectory) | Out-Null
 [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($resolvedStartWindowLogoPath)) | Out-Null
+[System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($resolvedWorkbenchIconPath)) | Out-Null
 
 <#
 .SYNOPSIS
@@ -114,6 +120,26 @@ function Write-Bytes {
 	[System.IO.File]::WriteAllBytes($Path, $Bytes)
 }
 
+<#
+.SYNOPSIS
+Writes the mark as an SVG so it can replace a core icon that stylesheets load by name.
+
+The workbench loads `code-icon.svg` from half a dozen stylesheets - the title bar, the banner,
+the Welcome page, the update tooltip. Upstream's own release build overlays that same file with
+its branded icon, so VShoon does too rather than patching every stylesheet. The artwork is a
+raster with gradients, so the SVG carries it as an embedded image.
+#>
+function Write-Svg {
+	param([string]$Path, [System.Drawing.Image]$Source, [int]$Size)
+
+	$encoded = [System.Convert]::ToBase64String((New-ResizedPngBytes -Source $Source -Width $Size -Height $Size))
+	$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 SIZE SIZE" width="SIZE" height="SIZE"><image width="SIZE" height="SIZE" href="data:image/png;base64,DATA"/></svg>'
+	$svg = $svg.Replace('SIZE', $Size).Replace('DATA', $encoded)
+	# LF, not the platform newline: the repository stores every text file with LF, so a CRLF
+	# here would make Git rewrite the file and every regeneration would look like a change.
+	[System.IO.File]::WriteAllText($Path, ($svg + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+}
+
 function Write-Ico {
 	param([string]$Path, [System.Drawing.Image]$Source, [int[]]$Sizes)
 
@@ -190,6 +216,7 @@ try {
 	Write-Bytes -Path (Join-Path $resolvedOutputDirectory 'code_70x70.png') -Bytes (New-ResizedPngBytes -Source $mark -Width 70 -Height 70 -Scale 0.92)
 	Write-Bytes -Path (Join-Path $resolvedOutputDirectory 'code_150x150.png') -Bytes (New-ResizedPngBytes -Source $mark -Width 150 -Height 150 -Scale 0.92)
 	Write-Bytes -Path $resolvedStartWindowLogoPath -Bytes (New-ResizedPngBytes -Source $mark -Width 256 -Height 256)
+	Write-Svg -Path $resolvedWorkbenchIconPath -Source $mark -Size 256
 
 	$wizardSizes = @(
 		@('100', 164, 314, 55, 55),
@@ -210,3 +237,4 @@ try {
 
 Write-Host "[vshoon] generated Windows brand assets in $resolvedOutputDirectory"
 Write-Host "[vshoon] generated the start window mark at $resolvedStartWindowLogoPath"
+Write-Host "[vshoon] generated the workbench icon at $resolvedWorkbenchIconPath"

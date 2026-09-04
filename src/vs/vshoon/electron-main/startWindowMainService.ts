@@ -6,7 +6,7 @@
 import { app, BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { Disposable, DisposableStore, toDisposable } from '../../base/common/lifecycle.js';
 import { FileAccess } from '../../base/common/network.js';
-import { isMacintosh } from '../../base/common/platform.js';
+import { isMacintosh, isWindows } from '../../base/common/platform.js';
 import { URI } from '../../base/common/uri.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { getNLSLanguage, getNLSMessages } from '../../nls.js';
@@ -16,6 +16,8 @@ import { createDecorator } from '../../platform/instantiation/common/instantiati
 import { ILifecycleMainService } from '../../platform/lifecycle/electron-main/lifecycleMainService.js';
 import { ILogService } from '../../platform/log/common/log.js';
 import { IStateService } from '../../platform/state/node/state.js';
+import { ThemeTypeSelector } from '../../platform/theme/common/theme.js';
+import { IThemeMainService } from '../../platform/theme/electron-main/themeMainService.js';
 import { IWindowOpenable } from '../../platform/window/common/window.js';
 import { IWindowsMainService, OpenContext } from '../../platform/windows/electron-main/windows.js';
 import { isRecentFolder } from '../../platform/workspaces/common/workspaces.js';
@@ -41,12 +43,21 @@ export interface IVShoonStartWindowResponse {
 	readonly projects?: readonly IVShoonRecentProject[];
 	readonly opened?: boolean;
 	readonly nls?: IVShoonStartWindowNls;
+	readonly theme?: IVShoonStartWindowTheme;
 }
 
 /** The translated messages the renderer needs before it can display any text. */
 export interface IVShoonStartWindowNls {
 	readonly messages: string[];
 	readonly language: string | undefined;
+}
+
+/** The persisted Workbench colors needed to avoid a visually separate launcher theme. */
+export interface IVShoonStartWindowTheme {
+	readonly baseTheme: ThemeTypeSelector;
+	readonly background: string;
+	readonly foreground: string;
+	readonly customTitleBar: boolean;
 }
 
 export const IVShoonStartWindowMainService = createDecorator<IVShoonStartWindowMainService>('vshoonStartWindowMainService');
@@ -97,6 +108,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		@IWindowsMainService private readonly windowsMainService: IWindowsMainService,
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
 		@IStateService private readonly stateService: IStateService,
+		@IThemeMainService private readonly themeMainService: IThemeMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService
 	) {
 		super();
@@ -112,17 +124,26 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		}
 
 		this.state = 'showing';
+		const theme = this.getTheme();
 
 		const window = this.window = new BrowserWindow({
 			title: 'VShoon',
-			width: 860,
-			height: 600,
-			minWidth: 680,
-			minHeight: 460,
+			width: 720,
+			height: 520,
+			minWidth: 560,
+			minHeight: 400,
 			center: true,
 			show: false,
 			autoHideMenuBar: true,
-			backgroundColor: '#181818',
+			backgroundColor: theme.background,
+			...(isWindows ? {
+				titleBarStyle: 'hidden',
+				titleBarOverlay: {
+					color: theme.background,
+					symbolColor: theme.foreground,
+					height: 35
+				}
+			} satisfies Pick<Electron.BrowserWindowConstructorOptions, 'titleBarStyle' | 'titleBarOverlay'> : {}),
 			webPreferences: {
 				preload: FileAccess.asFileUri('vs/base/parts/sandbox/electron-browser/preload-aux.js').fsPath,
 				contextIsolation: true,
@@ -198,7 +219,10 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 
 		switch (parsed.type) {
 			case 'configuration':
-				return { nls: { messages: getNLSMessages(), language: getNLSLanguage() } };
+				return {
+					nls: { messages: getNLSMessages(), language: getNLSLanguage() },
+					theme: this.getTheme()
+				};
 
 			case 'projects':
 				return { projects: await this.loadProjects() };
@@ -225,6 +249,38 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 				this.window?.close(); // `onClosed` ends the session
 
 				return {};
+		}
+	}
+
+	private getTheme(): IVShoonStartWindowTheme {
+		const colorScheme = this.themeMainService.getColorScheme();
+		const splash = this.themeMainService.getWindowSplash(undefined);
+		let baseTheme = splash?.baseTheme ?? ThemeTypeSelector.VS_DARK;
+
+		if (colorScheme.highContrast) {
+			baseTheme = colorScheme.dark ? ThemeTypeSelector.HC_BLACK : ThemeTypeSelector.HC_LIGHT;
+		} else if (this.themeMainService.isAutoDetectColorScheme()) {
+			baseTheme = colorScheme.dark ? ThemeTypeSelector.VS_DARK : ThemeTypeSelector.VS;
+		}
+
+		return {
+			baseTheme,
+			background: this.themeMainService.getBackgroundColor(),
+			foreground: splash?.baseTheme === baseTheme && splash.colorInfo.foreground
+				? splash.colorInfo.foreground
+				: this.getDefaultForeground(baseTheme),
+			customTitleBar: isWindows
+		};
+	}
+
+	private getDefaultForeground(baseTheme: ThemeTypeSelector): string {
+		switch (baseTheme) {
+			case ThemeTypeSelector.VS:
+				return '#3B3B3B';
+			case ThemeTypeSelector.HC_LIGHT:
+				return '#292929';
+			default:
+				return '#CCCCCC';
 		}
 	}
 

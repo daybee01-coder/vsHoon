@@ -1,0 +1,19 @@
+diff --git a/src/vs/platform/extensionManagement/node/extensionManagementService.ts b/src/vs/platform/extensionManagement/node/extensionManagementService.ts
+index 6eefd7163dbb..aef2e3618924 100644
+--- a/src/vs/platform/extensionManagement/node/extensionManagementService.ts
++++ b/src/vs/platform/extensionManagement/node/extensionManagementService.ts
+@@ -338,6 +338,14 @@ export class ExtensionManagementService extends AbstractExtensionManagementServi
+ 	}
+ 
+ 	private async downloadExtension(extension: IGalleryExtension, operation: InstallOperation, verifySignature: boolean, clientTargetPlatform?: TargetPlatform): Promise<{ readonly location: URI; readonly verificationStatus: ExtensionSignatureVerificationCode | undefined }> {
++		// VShoon: a gallery that does not repository-sign cannot pass verification, and an OSS
++		// build carries no verifier to run it with, so leaving this on turns every install into a
++		// hard failure instead of a security check. The product states which kind of gallery it
++		// points at; everything else keeps upstream's behaviour, including the user setting below.
++		if (verifySignature && this.productService.extensionsGallery?.vshoonRepositorySigned === false) {
++			verifySignature = false;
++		}
++
+ 		if (verifySignature) {
+ 			const value = this.configurationService.getValue(VerifyExtensionSignatureConfigKey);
+ 			verifySignature = isBoolean(value) ? value : true;

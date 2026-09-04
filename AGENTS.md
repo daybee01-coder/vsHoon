@@ -18,6 +18,7 @@ VShoon은 Code - OSS를 기반으로 하며 VS Code의 핵심 기능을 유지�
 - 사용자 데이터 디렉터리: `.vshoon`
 - 설정 및 명령 접두사: `vshoon.*`
 - 제품 전용 소스 루트: `src/vs/vshoon`
+- 기본 표시 언어: `ko`. `product.json`의 `vshoonDefaultLocale`이 정하고, 내장 언어 팩이 번역을 제공한다.
 
 VShoon은 공개된 Code - OSS 소스를 기반으로 한다. Microsoft Visual Studio Code의 상표, 아이콘, 배포 바이너리, Marketplace 사용 권한, 업데이트 서비스, 텔레메트리 주소를 VShoon 자산으로 간주하거나 무단 재사용하지 않는다. upstream 및 서드파티 라이선스 고지를 보존한다.
 
@@ -32,7 +33,8 @@ VShoon은 공개된 Code - OSS 소스를 기반으로 한다. Microsoft Visual S
 
 작업 대상 구분:
 
-- VShoon 소유: `src/vs/vshoon/**`, `extensions/vshoon-*`, 브랜드 마스터 `logo.png`, `vshoon.lock.json`의 overlay에 명시된 Windows 브랜드 자산, `patches/**`, `scripts/**`, `docs/**`, `AGENTS.md`
+- VShoon 소유: `src/vs/vshoon/**`, `extensions/vshoon-*`, 브랜드 마스터 `logo.png`, VShoon 문자열 번역 `i18n/**`, `vshoon.lock.json`의 overlay에 명시된 브랜드 자산, `patches/**`, `scripts/**`, `docs/**`, `AGENTS.md`
+- 생성물이라 커밋하지 않는 것: `extensions/vshoon-language-pack-*`와 `.i18n/`(`npm run sync`가 다시 만든다), `extensions/vshoon-vsearch/media/monaco`(`npm run sync:monaco`가 다시 만든다).
 - 코어 소유: `.core/**` 전부. 여기서 직접 편집해도 되는 것은 패치 대상 파일뿐이며, 편집 후 반드시 `npm run patch:save`를 실행한다.
 - `.core/src/vs/vshoon`은 오버레이 복사본이다. 여기서 편집하면 다음 미러링 때 덮어써진다.
 
@@ -242,3 +244,23 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 - 사용자에게 중간 진행 상황과 중요한 판단을 한글로 전달한다.
 - 사용자 요청이 없다면 원격 push, PR 생성, 릴리스, 외부 메시지 전송을 하지 않는다.
 - 기능 완료를 주장하기 전에 실제 검증 결과를 확인한다.
+
+
+## 12. 패키징
+ - 패키징은 직접 실행할거니 안해도됨
+ - 테스트 시 빌드하는건 알아서하셈
+
+
+## 13. 추가개발
+- D:\project\vscode\DBconn
+- 위 경로의 플러그인을 기본 플러그인으로 병합
+- 플러그인의 커넥션 설정창이 새창으로 뜨는데 모달형태로 변경
+
+## 14. 추가개발2
+- D:\project\vscode\VSsh
+- D:\project\vscode\VSearch
+- 위 경로에 있는 플러그인도 동일하게 병합
+
+## 15. 추가개발
+- 윈도우 기본 파일 선택기를 사용하는데 현재 ui와 통일감있게 파일선택기 개발
+- D:\project\vscode\Decom 플러그인도 기본 기능으로 병합

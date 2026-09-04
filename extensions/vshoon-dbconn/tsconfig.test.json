@@ -1,0 +1,36 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-test",
+    "noEmit": false,
+    "sourceMap": true
+  },
+  "include": [
+    "src/types.ts",
+    "src/sql/**/*.ts",
+    "src/db/serialize.ts",
+    "src/db/driver.ts",
+    "src/db/rowEditor.ts",
+    "src/db/rowEditor.test.ts",
+    "src/config/folders.ts",
+    "src/config/folders.test.ts",
+    "src/db/catalogDetail.ts",
+    "src/db/catalogDetail.test.ts",
+    "src/features/scriptIndex.ts",
+    "src/features/scriptIndex.test.ts",
+    "src/features/recentIndex.ts",
+    "src/features/recentIndex.test.ts",
+    "src/features/queryFiles.ts",
+    "src/features/queryFiles.test.ts",
+    "src/features/historyIndex.ts",
+    "src/features/historyIndex.test.ts",
+    "src/config/connectionUrl.ts",
+    "src/config/connectionUrl.test.ts",
+    "src/config/profileNames.ts",
+    "src/config/profileNames.test.ts",
+    "src/config/environment.ts",
+    "src/config/environment.test.ts",
+    "src/views/dialectIconName.ts",
+    "src/views/dialectIconName.test.ts"
+  ]
+}

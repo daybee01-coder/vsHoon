@@ -1,0 +1,20 @@
+{
+	// `.core` is a full clone of microsoft/vscode pinned by vshoon.lock.json, so it carries its
+	// own `.git` and the SCM view otherwise lists it as a second repository. Everything staged
+	// there is just `patches/*.patch` applied by `npm run sync` with `git apply --3way`, which
+	// stages what it applies; it is never a commit. Hiding the repository keeps the SCM view
+	// showing only VShoon's own changes and removes the chance of committing against
+	// microsoft/vscode by accident.
+	//
+	// `.i18n` is the same story for microsoft/vscode-loc: `npm run sync:i18n` fetches the pinned
+	// commit into a checkout of its own and generates the built-in language packs from it, so the
+	// SCM view lists it as a third repository sitting on a detached HEAD. Nothing is ever
+	// committed there either; translation bumps go through the pin in vshoon.lock.json.
+	//
+	// A relative path is resolved against each workspace folder, so this holds on any machine.
+	// Patch edits still go back through `npm run patch:save`, never through a commit here.
+	"git.ignoredRepositories": [
+		".core",
+		".i18n"
+	]
+}

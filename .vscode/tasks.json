@@ -1,0 +1,218 @@
+{
+	// Build and verification entry points, so the sequences in docs/release.md are one click
+	// instead of a remembered command. Everything runs from the repository root: the npm scripts
+	// mirror the overlay into .core first, so a build can never run against stale VShoon sources.
+	//
+	// `Ctrl+Shift+B` runs the development build. Everything else is under `Terminal > Run Task`.
+	"version": "2.0.0",
+	"tasks": [
+		{
+			// The build a development run and the non-packaged smoke tests need.
+			"label": "VShoon: Build (dev)",
+			"type": "shell",
+			"command": "npm run build",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			}
+		},
+		{
+			// Everything that can be checked without producing a package.
+			"label": "VShoon: Checks",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"vshoon: typecheck",
+				"vshoon: lint",
+				"vshoon: layers",
+				"vshoon: unit tests",
+				"vshoon: script tests"
+			],
+			"problemMatcher": []
+		},
+		{
+			// The product. Resets the core first: a package build that died partway can leave the
+			// core's node_modules in a state the next run trips over, and `sync` discards it.
+			"label": "VShoon: Package (win32-x64)",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"vshoon: sync",
+				"vshoon: sync check",
+				"vshoon: unit tests",
+				"vshoon: gulp package",
+				"vshoon: smoke start window (packaged)"
+			],
+			"problemMatcher": []
+		},
+		{
+			// Run after the package task: the installer only places the application folder.
+			"label": "VShoon: Installer (user setup)",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"vshoon: gulp inno updater",
+				"vshoon: gulp user setup"
+			],
+			"problemMatcher": []
+		},
+		{
+			// Drives the real application, so it needs a development build first.
+			"label": "VShoon: Smoke tests (dev)",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"VShoon: Build (dev)",
+				"vshoon: smoke start window",
+				"vshoon: smoke ui extension"
+			],
+			"problemMatcher": []
+		},
+		{
+			// Safe at any time: it only resets the core checkout, which is build output.
+			"label": "VShoon: Reset core",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"vshoon: sync",
+				"vshoon: sync check"
+			],
+			"problemMatcher": []
+		},
+
+		// Steps the tasks above are composed from. Useful on their own when something fails and
+		// you want to re-run just that step.
+		{
+			"label": "vshoon: sync",
+			"type": "shell",
+			"command": "npm run sync",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			}
+		},
+		{
+			"label": "vshoon: sync check",
+			"type": "shell",
+			"command": "npm run sync:check",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: typecheck",
+			"type": "shell",
+			"command": "npm run typecheck",
+			"problemMatcher": "$tsc",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: lint",
+			"type": "shell",
+			"command": "npm run lint",
+			"problemMatcher": "$eslint-stylish",
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: layers",
+			"type": "shell",
+			"command": "npm run layers",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: unit tests",
+			"type": "shell",
+			"command": "npm test",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: script tests",
+			"type": "shell",
+			"command": "npm run test:scripts",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: gulp package",
+			"type": "shell",
+			"command": "npm run core -- run gulp vscode-win32-x64",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: gulp inno updater",
+			"type": "shell",
+			"command": "npm run core -- run gulp vscode-win32-x64-inno-updater",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: gulp user setup",
+			"type": "shell",
+			"command": "npm run core -- run gulp vscode-win32-x64-user-setup",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: smoke start window",
+			"type": "shell",
+			"command": "npm run smoke:start-window",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: smoke start window (packaged)",
+			"type": "shell",
+			"command": "npm run smoke:start-window -- --package VSCode-win32-x64",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			"label": "vshoon: smoke ui extension",
+			"type": "shell",
+			"command": "npm run smoke:ui-extension",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		}
+	]
+}

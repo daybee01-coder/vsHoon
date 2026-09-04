@@ -1,8 +1,8 @@
 diff --git a/product.json b/product.json
-index 47016c085d19..fdcecbb16331 100644
+index 47016c085d19..785c7d8908d2 100644
 --- a/product.json
 +++ b/product.json
-@@ -1,39 +1,44 @@
+@@ -1,39 +1,55 @@
  {
 -	"nameShort": "Code - OSS",
 -	"nameLong": "Code - OSS",
@@ -61,12 +61,53 @@ index 47016c085d19..fdcecbb16331 100644
  	"darwinProfilePayloadUUID": "CF808BE7-53F3-46C6-A7E2-7EDB98A5E959",
 -	"linuxIconName": "code-oss",
 +	"linuxIconName": "vshoon",
++	"vshoonDefaultLocale": "ko",
  	"licenseFileName": "LICENSE.txt",
  	"reportIssueUrl": "https://github.com/microsoft/vscode/issues/new",
  	"nodejsArtifactFeed": "",
  	"electronArtifactFeed": "",
 -	"urlProtocol": "code-oss",
 +	"urlProtocol": "vshoon",
++	"extensionsGallery": {
++		"serviceUrl": "https://open-vsx.org/vscode/gallery",
++		"itemUrl": "https://open-vsx.org/vscode/item",
++		"publisherUrl": "https://open-vsx.org/namespace",
++		"resourceUrlTemplate": "https://open-vsx.org/vscode/asset/{publisher}/{name}/{version}/Microsoft.VisualStudio.Code.WebResources/{path}",
++		"extensionUrlTemplate": "",
++		"controlUrl": "",
++		"nlsBaseUrl": "",
++		"vshoonRepositorySigned": false
++	},
  	"agentsTelemetryAppName": "agents",
  	"webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",
  	"builtInExtensions": [
+diff --git a/src/vs/base/common/product.ts b/src/vs/base/common/product.ts
+index 43e145eb3b73..b44aed385b6b 100644
+--- a/src/vs/base/common/product.ts
++++ b/src/vs/base/common/product.ts
+@@ -148,6 +148,12 @@ export interface IProductConfiguration {
+ 		readonly resourceUrlTemplate: string;
+ 		readonly nlsBaseUrl: string;
+ 		readonly accessSKUs?: string[];
++
++		/**
++		 * VShoon: whether this gallery repository-signs the extensions it serves. Absent means it
++		 * does, which is upstream's assumption.
++		 */
++		readonly vshoonRepositorySigned?: boolean;
+ 	};
+ 
+ 	readonly agentSdks?: { readonly [packageId: string]: IAgentSdkProductConfig };
+@@ -189,6 +195,12 @@ export interface IProductConfiguration {
+ 
+ 	readonly commandPaletteSuggestedCommandIds?: string[];
+ 
++	/**
++	 * VShoon: the display language a fresh installation starts in, written into `argv.json` the
++	 * first time it is created. Absent means English, which is upstream's behavior.
++	 */
++	readonly vshoonDefaultLocale?: string;
++
+ 	readonly crashReporter?: {
+ 		readonly companyName: string;
+ 		readonly productName: string;
