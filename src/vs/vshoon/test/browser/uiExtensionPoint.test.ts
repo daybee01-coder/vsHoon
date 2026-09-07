@@ -66,6 +66,8 @@ suite('VShoon UI Extension Point', () => {
 		assert.deepStrictEqual(modalSchema?.items && !Array.isArray(modalSchema.items)
 			? modalSchema.items.required
 			: undefined, ['version', 'viewType']);
+		const modalItemSchema = modalSchema?.items && !Array.isArray(modalSchema.items) ? modalSchema.items : undefined;
+		assert.deepStrictEqual(modalItemSchema?.properties?.size?.required, ['width', 'height']);
 	});
 
 	test('accepts bundled extensions and removes their registrations on unload', () => {
@@ -94,11 +96,12 @@ suite('VShoon UI Extension Point', () => {
 		const errors: string[] = [];
 		registry.accept(VSHOON_MODAL_WEBVIEWS_EXTENSION_POINT, [{
 			description: { identifier: { value: 'vshoon.dbconn-test' }, isBuiltin: true },
-			value: [{ version: 1, viewType: 'dbconn.connectionForm' }],
+			value: [{ version: 1, viewType: 'dbconn.connectionForm', size: { width: 760, height: 625 } }],
 			collector: { error: message => errors.push(message) }
 		}]);
 		assert.deepStrictEqual(errors, [] as string[]);
 		assert.strictEqual(vshoonModalWebviewRegistry.isModalWebview('vshoon.dbconn-test', 'dbconn.connectionForm'), true);
+		assert.deepStrictEqual(vshoonModalWebviewRegistry.getModalWebview('vshoon.dbconn-test', 'dbconn.connectionForm')?.size, { width: 760, height: 625 });
 
 		registry.accept(VSHOON_MODAL_WEBVIEWS_EXTENSION_POINT, [{
 			description: { identifier: { value: 'publisher.modal-test' }, isBuiltin: false },

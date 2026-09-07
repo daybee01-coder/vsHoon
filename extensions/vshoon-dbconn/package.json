@@ -7,7 +7,7 @@
   "license": "MIT",
   "engines": {
     "vscode": "^1.137.0",
-    "node": ">=18"
+    "node": ">=24"
   },
   "categories": [
     "Programming Languages",
@@ -36,7 +36,11 @@
     "vshoon.ui.modalWebviews": [
       {
         "version": 1,
-        "viewType": "dbconn.connectionForm"
+        "viewType": "dbconn.connectionForm",
+        "size": {
+          "width": 760,
+          "height": 625
+        }
       }
     ],
     "viewsContainers": {
@@ -71,7 +75,7 @@
     "viewsWelcome": [
       {
         "view": "dbconn.connections",
-        "contents": "등록된 데이터베이스 연결이 없습니다.\n[연결 추가](command:dbconn.addConnection)"
+        "contents": "등록된 데이터베이스 연결이 없습니다.\n[연결 추가](command:dbconn.addConnection)\n[VS Code 에서 가져오기](command:dbconn.importFromVSCode)"
       }
     ],
     "commands": [
@@ -86,6 +90,12 @@
         "title": "URL 로 커넥션 추가",
         "category": "DBConn",
         "icon": "$(link)"
+      },
+      {
+        "command": "dbconn.importFromVSCode",
+        "title": "VS Code 에서 커넥션 가져오기",
+        "category": "DBConn",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "dbconn.copyConnectionUrl",
@@ -360,6 +370,11 @@
         },
         {
           "command": "dbconn.addConnectionFromUrl",
+          "when": "view == dbconn.connections",
+          "group": "2_edit"
+        },
+        {
+          "command": "dbconn.importFromVSCode",
           "when": "view == dbconn.connections",
           "group": "2_edit"
         },
@@ -964,11 +979,6 @@
     "compile": "gulp compile-extension:vshoon-dbconn",
     "watch": "gulp watch-extension:vshoon-dbconn",
     "test": "node --test \"out/**/*.test.js\""
-  },
-  "dependencies": {
-    "mysql2": "^3.11.5",
-    "oracledb": "^6.7.1",
-    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

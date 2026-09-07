@@ -18,6 +18,64 @@
 | VSH-0009 | `patches/VSH-0009-unsigned-gallery.patch` | 서명하지 않는 확장 갤러리 |
 | VSH-0010 | `patches/VSH-0010-modal-webviews.patch` | built-in 웹뷰 모달 라우팅과 bundled extension 의존성 |
 | VSH-0011 | `patches/VSH-0011-file-dialog-seam.patch` | 로컬 파일 선택 요청을 VShoon 전용 트리 모달로 위임 |
+| VSH-0012 | `patches/VSH-0012-os-file-drops.patch` | 선언한 bundled 웹뷰 뷰에 OS 파일 드롭 경로 전달 |
+| VSH-0013 | `patches/VSH-0013-native-file-drag.patch` | 로컬 파일을 OS 드래그로 내보내는 네이티브 seam |
+
+## VSH-0013 — Native File Drag Out of Bundled Webview Views
+
+- 목적: 선언한 bundled 웹뷰 뷰가 이미 로컬에 있는 파일을 윈도우 탐색기 같은 OS 드롭 대상으로
+  끌어낼 수 있게 한다.
+- 수정한 upstream 파일: `src/vs/platform/native/common/native.ts`,
+  `src/vs/platform/native/electron-main/nativeHostMainService.ts`,
+  `src/vs/workbench/electron-browser/desktop.contribution.ts`,
+  `src/vs/workbench/test/electron-browser/workbenchTestServices.ts`.
+- 수정 이유: 샌드박스 웹뷰는 실제 경로를 가진 네이티브 드래그를 시작할 수 없다. upstream이 파일을
+  OS로 내보낼 때 쓰는 `DownloadURL`은 주석이 스스로 밝히듯 단일 파일과 `file:` URI로 제한되고
+  ([workbench/browser/dnd.ts](../.core/src/vs/workbench/browser/dnd.ts)), 여러 항목이나 폴더에는
+  쓸 수 없다. `webContents.startDrag`만이 이를 제대로 처리하는데 main 프로세스 API이므로,
+  `INativeHostService`에 최소한의 진입점 하나를 추가하고 desktop 계층에서 구현을 등록한다.
+- 의존 symbol/service: `INativeHostService`, `NativeHostMainService.windowById`, Electron
+  `webContents.startDrag`와 `nativeImage`, `registerWorkbenchContribution2`, VShoon 소유
+  `vshoonOsFileDragDelegate`.
+- 신뢰 경계: 드래그 요청은 VSH-0012가 이미 권한을 확인한 뷰의 웹뷰 메시지로만 들어온다. seam은
+  browser 계층이라 native 서비스를 직접 참조하지 않고 delegate만 호출하며, 구현은 desktop 계층이
+  채운다. 경로 개수는 100개로 제한하고 빈 문자열을 거부한다. 파일을 새로 만들거나 지우지 않고
+  이미 있는 경로를 셸에 넘기기만 한다. 다만 경로 자체는 확장의 웹뷰가 제시한 값이므로, 이 기능을
+  쓰는 확장은 자기 웹뷰 콘텐츠를 신뢰할 수 있어야 한다(VSH-0012와 같은 조건).
+- 충돌 위험도: 낮음. 네이티브 서비스에 메서드 하나, desktop 기여 등록 한 곳을 더한다. upstream이
+  `INativeHostService` 형태나 contribution 등록 방식을 바꾸면 재검토가 필요하다.
+- 테스트: 드래그 요청 파싱 단위 테스트(형식·개수·빈 경로 거부), client typecheck, 계층 검사,
+  확장 컴파일, 개발 빌드. 실제 셸로의 드래그는 마우스 버튼이 눌린 상태를 요구해 CDP로 합성할 수
+  없으므로 수동 확인으로 남는다.
+- 제거 가능 조건: upstream이 웹뷰에서 네이티브 파일 드래그를 시작하는 공식 경로를 제공하는 경우.
+
+## VSH-0012 — OS File Drops for Bundled Webview Views
+
+- 목적: 윈도우 탐색기에서 끌어온 파일의 실제 경로를, 이를 선언한 bundled 확장의 웹뷰 뷰에 전달한다.
+- 수정한 upstream 파일: `src/vs/workbench/contrib/webviewView/browser/webviewViewPane.ts`.
+- 수정 이유: 웹뷰는 OS 파일 드롭을 받을 수 없다. 웹뷰 preload가 드래그 항목이 전부 파일이면
+  `drag-start`를 호스트에 보내고, `WebviewElement`가 iframe에 `pointer-events: none`을 걸어
+  드롭을 Workbench로 넘긴다(electron#18226 회피). 확장이 웹뷰 안에서 아무리 `drop`을 처리해도
+  이벤트 자체가 도달하지 않는다. 게다가 Electron 32부터 `File.path`가 없어져, 도달하더라도
+  웹뷰에서는 경로를 알 수 없다. 경로를 아는 곳은 `webUtils.getPathForFile`을 쓸 수 있는 Workbench
+  렌더러뿐이므로, 드롭을 빼앗기는 바로 그 자리에서 경로를 풀어 선언한 뷰에 돌려준다.
+- 의존 symbol/service: `WebviewViewPane`의 `extensionId`·`id`·pane body 컨테이너, `containsDragType`,
+  `DataTransfers.FILES`, `getPathForFile`, `IOverlayWebview.postMessage`, VShoon 소유
+  `vshoonOsFileDropRegistry`.
+- 신뢰 경계: extension point가 bundled source만 허용하고 extension id와 view type을 함께 매칭한다.
+  경로는 Workbench가 드롭 이벤트에서 직접 풀어낸 값이며 확장이 제시한 값을 쓰지 않는다. 선언하지
+  않은 뷰에서는 리스너가 즉시 빠져나가 upstream 동작이 그대로 유지된다. 전달은 뷰가 이미 듣고 있는
+  웹뷰 메시지 채널을 쓰므로 새 extension host API를 열지 않는다. 다만 확장이 그 경로를 다시 호스트로
+  돌려보내는 구간은 확장 자신의 웹뷰를 거치므로, 이 경로를 받는 확장은 자기 웹뷰 콘텐츠를 신뢰할 수
+  있어야 한다.
+- 충돌 위험도: 낮음. 웹뷰 뷰 pane 한 곳에 조건부 리스너만 추가한다. upstream이 웹뷰 드래그 차단
+  방식이나 `getPathForFile` 노출을 바꾸면 재검토가 필요하다.
+- 테스트: 레지스트리 단위 테스트(권한·형식·중복 거부, 부분 등록 없음), client typecheck, 계층 검사,
+  확장 컴파일, 개발 빌드에서 SFTP 뷰에 파일 dragover를 보내 VShoon 리스너가 이를 취소하는지 확인.
+  실제 OS 드래그는 CDP로 합성되지 않아(Electron이 `Input.dispatchDragEvent`를 DOM에 전달하지 않음)
+  탐색기에서의 최종 확인은 수동으로 남아 있다. UIPI 때문에 승격 실행 중에는 드롭 자체가 차단되므로
+  비승격 실행이 전제다.
+- 제거 가능 조건: upstream이 웹뷰에 OS 드롭 경로를 전달하는 공식 경로를 제공하는 경우.
 
 ## VSH-0011 — VShoon File Dialog Delegation Seam
 
@@ -59,12 +117,12 @@ What shipping it means:
 
 ## VSH-0001 — Product Identity
 
-- Purpose: separate VShoon application data, protocol handlers, mutexes, installer identities, visible product name, extension gallery and default display language from Code - OSS.
+- Purpose: separate VShoon application data, protocol handlers, mutexes, installer identities, visible product name, extension gallery and default display language from Code - OSS. Allow a locally installed official OpenAI Codex extension (`openai.chatgpt`) to use the two proposed APIs declared by its manifest.
 - Upstream files: `product.json`, `src/vs/base/common/product.ts` (VShoon 전용 필드의 타입).
 - Reason: side-by-side installation and a distinct, non-Microsoft product identity require unique identifiers. `defaultChatAgent`, `trustedExtensionAuthAccess` and `builtInExtensionsEnabledWithAutoUpdates` are left exactly as upstream declares them, because VShoon ships upstream's Copilot integration unchanged; see [licensing.md](licensing.md) for what that redistributes and [the note below](#copilot-is-shipped-as-upstream-configures-it).
-- Dependencies: upstream product configuration schema and packaging scripts that consume `product.json`. `extensionsGallery` points at Open VSX; see [licensing.md](licensing.md) for why not the Microsoft Marketplace.
+- Dependencies: upstream product configuration schema and packaging scripts that consume `product.json`. `extensionsGallery` points at Open VSX; see [licensing.md](licensing.md) for why not the Microsoft Marketplace. `extensionEnabledApiProposals` grants `languageModelProxy` and `chatSessionsProvider` only to `openai.chatgpt`; the extension remains a user-installed VSIX and is not redistributed with VShoon.
 - Conflict risk: medium; upstream occasionally adds product identity fields.
-- Validation: parse `product.json`; inspect packaged Windows metadata and side-by-side behavior in Phase 4.
+- Validation: parse `product.json`; verify both enabled proposal names exist in the pinned core; inspect packaged Windows metadata and side-by-side behavior in Phase 4.
 - Removal condition: none while VShoon remains a separately distributed product.
 
 ## VSH-0002 — Start-Window Policy and Lifecycle Seam
@@ -131,9 +189,12 @@ What shipping it means:
   병합한 네 확장이 사용하는 서드파티 의존성을 built-in extension 공유 의존성으로 제공한다.
 - 수정한 upstream 파일: `src/vs/workbench/api/browser/mainThreadWebviewPanels.ts`,
   `src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts`,
+  `src/vs/workbench/browser/parts/editor/modalEditorPart.ts`,
   `extensions/package.json`, `extensions/package-lock.json`.
 - 수정 이유: 표준 Extension API의 `createWebviewPanel`은 모달 target을 노출하지 않는다. 별도 창으로
   active editor를 옮기는 방식은 사용자의 창 배치를 바꾸며 진짜 모달 포커스 경계도 만들지 못한다.
+  모달 편집기의 기본 크기 상태는 모든 패널이 공유하므로, 선언과 일치한 웹뷰에만 제한된 초기 크기를
+  전달하지 않으면 VSsh·DBConn·VSearch가 직전에 닫힌 다른 모달의 크기를 물려받는다.
   네 확장의 의존성(DBConn 드라이버 `mysql2`/`pg`/`oracledb`, Decom의 `adm-zip`, VSsh의 `ssh2`/`iconv-lite`/
   `ppk-to-openssh`, VSearch 미리보기가 쓰는 `monaco-editor`)은 extension host에서 런타임 로드되거나
   빌드 시 media로 staging 되므로 재현 가능한 공유 dependency lock이 필요하다. `ppk-to-openssh`는
@@ -141,7 +202,8 @@ What shipping it means:
 - 의존 symbol/service: `MainThreadWebviewPanels`, `IWebviewWorkbenchService`, `MODAL_GROUP`, upstream
   `ModalEditorPart`, VShoon 소유 `vshoonModalWebviewRegistry`.
 - 신뢰 경계: extension point가 bundled source만 허용하고 extension id와 view type을 함께 매칭한다.
-  product seam으로는 식별자만 전달되며 HTML, 자격 증명, 메시지 payload 또는 DOM handle은 전달되지 않는다.
+  크기는 정수 `400×300` 이상 `2400×1600` 이하로 제한하고 Workbench가 실제 가용 영역으로 다시
+  축소한다. product seam으로 HTML, 자격 증명, 메시지 payload 또는 DOM handle은 전달되지 않는다.
 - 충돌 위험도: 중간. upstream webview panel 생성 경로와 extension 공유 dependency lockfile 변경 시
   재검토가 필요하다.
 - 테스트: modal registry 및 extension-point 단위 테스트, DBConn·VSearch 단위 테스트,
@@ -151,14 +213,22 @@ What shipping it means:
   어긋나게 두면 이 smoke test가 모달을 기다리다 실패하므로, 검사가 seam 자체를 보고 있음을 확인했다.
 - 제거 가능 조건: upstream Extension API가 권한·fallback을 갖춘 modal webview target을 공식 지원하는 경우.
 
+2026-09-07: `ModalEditorPart`의 active editor 전환과 disposable 수명주기에
+`VShoonModalWebviewLayout`을 연결했다. 위치·크기 setter가 공개 서비스에서는 readonly여서
+제품 모듈만으로 복원할 수 없으므로 이 작은 seam을 추가했다. 저장과 플러그인 구분은
+VShoon 모듈이 담당하고 화면 경계 제한은 upstream layout을 재사용한다.
+창 메모리에서 extension id + view type별로 보관하며 창 종료/새로고침 시 초기화된다.
+추가 검증은 layout snapshot 단위 테스트와 `npm run smoke:modal-webviews -- --remember-layout`이다.
+후자는 세 패널을 각각 크기 변경·이동한 뒤 닫고 다시 열어, 남긴 geometry 그대로 복원되는지 확인한다.
+
 ## VSH-0006 — Windows Product Metadata and Packaging
 
 - 목적: Windows 실행 파일과 설치 프로그램에서 Microsoft/VS Code 배포 메타데이터를 제거하고 VShoon 제품 메타데이터를 일관되게 사용한다.
-- 수정한 upstream 파일: `build/lib/electron.ts`, `build/gulpfile.vscode.ts`, `build/gulpfile.reh.ts`, `build/gulpfile.vscode.win32.ts`, `build/win32/code.iss`.
-- 수정 이유: Code - OSS 빌드 기본값에는 회사명, 저작권, 게시자 URL, 설치 파일 이름이 Microsoft 또는 VS Code 값으로 하드코딩되어 있다. 또한 Windows 패키징 마지막 단계가 `signtool.exe`로 기존 서명을 확인하는데, 서명을 하지 않는 개발 머신에는 Windows SDK 서명 도구가 없어 `ENOENT`로 패키징 전체가 실패한다. `hasAuthenticodeSignature`가 ENOENT를 "서명 없음"으로 처리하도록 좁혀서, 서명 파이프라인이 있는 환경의 동작은 그대로 두고 개발 패키지 빌드만 통과시킨다.
+- 수정한 upstream 파일: `build/.moduleignore.win32`, `build/lib/electron.ts`, `build/gulpfile.vscode.ts`, `build/gulpfile.reh.ts`, `build/gulpfile.vscode.win32.ts`, `build/win32/code.iss`.
+- 수정 이유: Code - OSS 빌드 기본값에는 회사명, 저작권, 게시자 URL, 설치 파일 이름이 Microsoft 또는 VS Code 값으로 하드코딩되어 있다. 또한 Windows 패키징 마지막 단계가 `signtool.exe`로 기존 서명을 확인하는데, 서명을 하지 않는 개발 머신에는 Windows SDK 서명 도구가 없어 `ENOENT`로 패키징 전체가 실패한다. `hasAuthenticodeSignature`가 ENOENT를 "서명 없음"으로 처리하도록 좁혀서, 서명 파이프라인이 있는 환경의 동작은 그대로 두고 개발 패키지 빌드만 통과시킨다. `oracledb`는 모든 플랫폼의 네이티브 바이너리를 한 패키지에 싣기 때문에 Windows 정리 규칙에서 Darwin/Linux 파일을 제외하여, Windows 리소스 편집기가 ELF/Mach-O `.node` 파일을 처리하지 않도록 한다.
 - 의존 symbol/service: `product.json`의 `companyName`, `copyright`, `win32PublisherName`, `win32PublisherUrl`, `win32SetupBaseName`과 Electron/Inno Setup 패키징 작업. Inno Setup 쪽은 `PublisherName`, `PublisherUrl`, `SetupBaseName`, `Copyright` 정의를 `code.iss`의 `AppPublisher`, `AppPublisherURL`, `OutputBaseFilename`, `AppCopyright`에 연결한다.
 - 충돌 위험도: 중간. upstream Windows 패키징 정의나 executable resource 편집 단계가 바뀌면 재검토가 필요하다.
-- 테스트: build TypeScript 검사, clean `npm run sync`, Windows x64 패키지 생성 후 실행 파일 version resource와 Inno Setup 메타데이터 검사.
+- 테스트: build TypeScript 검사, clean `npm run sync`, Windows 의존성 패키징에서 `oracledb`의 Windows x64 바이너리만 남는지 확인, Windows x64 패키지 생성 후 실행 파일 version resource와 Inno Setup 메타데이터 검사.
 - 제거 가능 조건: upstream 패키징이 모든 게시자·저작권·설치 파일 정보를 `product.json`에서 직접 읽도록 변경되는 경우.
 
 ## VSH-0009 — Unsigned Extension Gallery

@@ -1,3 +1,15 @@
+diff --git a/build/.moduleignore.win32 b/build/.moduleignore.win32
+index bd9e4c5d5b91..d25996b6b45a 100644
+--- a/build/.moduleignore.win32
++++ b/build/.moduleignore.win32
+@@ -1,2 +1,7 @@
+ @anthropic-ai/claude-agent-sdk/vendor/audio-capture/*-darwin/**
+ @anthropic-ai/claude-agent-sdk/vendor/audio-capture/*-linux/**
++
++# node-oracledb publishes every supported platform in one package. Keep the
++# Windows binary and discard foreign binaries before rcedit processes .node files.
++oracledb/build/Release/oracledb-*-darwin-*
++oracledb/build/Release/oracledb-*-linux-*
 diff --git a/build/gulpfile.reh.ts b/build/gulpfile.reh.ts
 index f0968a51bdc2..6ad9801f1732 100644
 --- a/build/gulpfile.reh.ts

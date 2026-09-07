@@ -27,6 +27,7 @@ interface InboundMessage {
   intoDir?: string;
   sync?: boolean;
   id?: string;
+  paths?: string[];
 }
 
 const LOCAL_PATH_KEY = 'vssh.sftp.localPath';
@@ -300,6 +301,12 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       return;
     }
     if (msg.intoDir !== undefined && this.leafNameError(msg.intoDir)) return;
+    if (
+      msg.paths !== undefined &&
+      (!Array.isArray(msg.paths) || msg.paths.some((p) => typeof p !== 'string' || !path.isAbsolute(p)))
+    ) {
+      return;
+    }
 
     switch (msg.type) {
       case 'ready':
@@ -330,6 +337,12 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         break;
       case 'transfer':
         if (msg.from && msg.names) await this.startTransfer(msg.from, msg.names, msg.intoDir);
+        break;
+      case 'osFileDrop':
+        if (msg.pane && msg.paths?.length) await this.dropFromOs(msg.pane, msg.paths, msg.intoDir);
+        break;
+      case 'osDragStart':
+        if (msg.pane && msg.names?.length) await this.startOsDrag(msg.pane, msg.names);
         break;
       case 'mkdirRequest':
         if (msg.pane) await this.mkdirInteractive(msg.pane);
@@ -647,6 +660,144 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       vscode.window.showErrorMessage(`VSsh: 전송 목록을 만들지 못했습니다 - ${describe(err)}`);
       return;
     }
+    await this.queueTransferItems(remoteSession, items, toRemote);
+  }
+
+  /**
+   * 패널에서 시작한 드래그를 셸에 넘긴다.
+   *
+   * 웹뷰는 OS 드래그를 시작할 수 없다. 여기서 실제 경로를 확정해 웹뷰로 돌려주면, 웹뷰가 그것을
+   * Workbench seam으로 전달하고 seam이 네이티브 드래그를 연다(VSH-0012/VSH-0013). 로컬 항목은
+   * 이미 디스크에 있으므로 확인만 하면 된다.
+   */
+  private async startOsDrag(pane: Pane, names: string[]): Promise<void> {
+    if (pane !== 'local') {
+      return;
+    }
+
+    const paths: string[] = [];
+    for (const name of names) {
+      const candidate = path.join(this.localPath, name);
+      try {
+        await fs.promises.stat(candidate);
+        paths.push(candidate);
+      } catch {
+        // 목록과 디스크가 어긋난 항목은 조용히 건너뛴다.
+      }
+    }
+    if (paths.length === 0) return;
+
+    this.post({ type: 'vshoon.osFileDragReady', paths });
+  }
+
+  /**
+   * 윈도우 탐색기에서 끌어온 파일을 받는다.
+   *
+   * 웹뷰는 OS 드롭을 직접 받을 수 없어 Workbench가 경로를 풀어 넘겨준다(VSH-0012). 웹뷰는 포인터가
+   * 어느 패널의 무엇 위에 있었는지만 알려주므로, 여기서는 실제로 남아 있는 항목만 골라 기존 전송
+   * 경로에 그대로 태운다.
+   */
+  private async dropFromOs(pane: Pane, paths: string[], intoDir?: string): Promise<void> {
+    const sources: string[] = [];
+    for (const candidate of paths) {
+      try {
+        await fs.promises.stat(candidate);
+        sources.push(candidate);
+      } catch {
+        // 드롭과 처리 사이에 사라진 항목은 조용히 건너뛴다.
+      }
+    }
+    if (sources.length === 0) return;
+
+    if (pane === 'local') {
+      await this.copyIntoLocalPane(sources, intoDir);
+      return;
+    }
+
+    const remoteSession = this.remoteSession;
+    if (!remoteSession) {
+      vscode.window.showWarningMessage('VSsh: 먼저 세션에 연결하세요.');
+      return;
+    }
+
+    const destDir = intoDir ? joinRemotePath(this.remotePath, intoDir) : this.remotePath;
+    let items: TransferItem[];
+    try {
+      // 한 번의 드롭에도 서로 다른 폴더의 항목이 섞여 올 수 있어 부모 폴더별로 묶는다.
+      const byParent = new Map<string, string[]>();
+      for (const source of sources) {
+        const parent = path.dirname(source);
+        const group = byParent.get(parent);
+        if (group) group.push(path.basename(source));
+        else byParent.set(parent, [path.basename(source)]);
+      }
+
+      const groups = await Promise.all(
+        [...byParent].map(([parent, names]) => this.buildUploadItems(remoteSession, names, destDir, parent))
+      );
+      items = groups.flat();
+    } catch (err) {
+      vscode.window.showErrorMessage(`VSsh: 전송 목록을 만들지 못했습니다 - ${describe(err)}`);
+      return;
+    }
+
+    await this.queueTransferItems(remoteSession, items, true);
+  }
+
+  /** 로컬 패널에 놓은 항목은 원격을 거치지 않고 지금 보고 있는 폴더로 복사한다. */
+  private async copyIntoLocalPane(sources: string[], intoDir?: string): Promise<void> {
+    const destDir = intoDir ? path.join(this.localPath, intoDir) : this.localPath;
+
+    // 자기 자신이나 자기 하위 폴더로의 복사는 원본을 망가뜨린다.
+    const copyable = sources.filter((source) => {
+      const target = path.join(destDir, path.basename(source));
+      const relative = path.relative(source, target);
+      return relative !== '' && (path.isAbsolute(relative) || relative.startsWith('..'));
+    });
+    if (copyable.length === 0) return;
+
+    const existing: string[] = [];
+    for (const source of copyable) {
+      try {
+        await fs.promises.stat(path.join(destDir, path.basename(source)));
+        existing.push(source);
+      } catch {
+        // 대상에 없으면 그대로 복사한다.
+      }
+    }
+
+    let planned = copyable;
+    if (existing.length > 0) {
+      const answer = await vscode.window.showWarningMessage(
+        `이미 있는 항목 ${existing.length}개를 덮어쓸까요?`,
+        { modal: true },
+        '덮어쓰기',
+        '건너뛰기'
+      );
+      if (!answer) return;
+      if (answer === '건너뛰기') planned = copyable.filter((source) => !existing.includes(source));
+    }
+    if (planned.length === 0) return;
+
+    let copied = 0;
+    for (const source of planned) {
+      try {
+        await fs.promises.cp(source, path.join(destDir, path.basename(source)), { recursive: true, force: true });
+        copied++;
+      } catch (err) {
+        vscode.window.showErrorMessage(`VSsh: ${path.basename(source)} 복사에 실패했습니다 - ${describe(err)}`);
+      }
+    }
+
+    if (copied > 0) await this.listPane('local');
+  }
+
+  /** 전송 목록을 만든 뒤의 공통 경로: 충돌 확인, 덮어쓰기 정책, 큐 투입. */
+  private async queueTransferItems(
+    remoteSession: FileSession,
+    items: TransferItem[],
+    toRemote: boolean
+  ): Promise<void> {
     if (items.length === 0) {
       vscode.window.showInformationMessage('VSsh: 전송할 파일이 없습니다.');
       return;
@@ -848,12 +999,13 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   private async buildUploadItems(
     remoteSession: FileSession,
     names: string[],
-    destDir: string
+    destDir: string,
+    sourceDir: string = this.localPath
   ): Promise<TransferItem[]> {
     const items: TransferItem[] = [];
     await Promise.all(
       names.map(async (name) => {
-        const localBase = path.join(this.localPath, name);
+        const localBase = path.join(sourceDir, name);
         const remoteBase = joinRemotePath(destDir, name);
         const st = await this.scanSemaphore.run(() => fs.promises.stat(localBase));
         if (st.isDirectory()) {

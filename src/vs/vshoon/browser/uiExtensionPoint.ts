@@ -7,6 +7,7 @@ import { IDisposable, markAsSingleton } from '../../base/common/lifecycle.js';
 import { IJSONSchema } from '../../base/common/jsonSchema.js';
 import { localize } from '../../nls.js';
 import { VSHOON_MODAL_WEBVIEWS_EXTENSION_POINT, VSHOON_MODAL_WEBVIEW_CAPABILITY_VERSION, VShoonModalWebviewRegistry } from '../common/modalWebviews.js';
+import { VSHOON_OS_FILE_DROPS_EXTENSION_POINT, VSHOON_OS_FILE_DROP_CAPABILITY_VERSION, VShoonOsFileDropRegistry } from '../common/osFileDrops.js';
 import { VSHOON_HEADER_COMMANDS_EXTENSION_POINT, VShoonUIContributionBridge } from '../common/uiContributionBridge.js';
 import { VShoonUIContributionRegistry, VSHOON_UI_CAPABILITY_VERSION } from '../common/uiContributions.js';
 
@@ -85,15 +86,54 @@ const modalWebviewSchema: IJSONSchema = {
 			maxLength: 100,
 			pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]*$',
 			description: localize('vshoon.ui.modalWebviews.viewType', "Webview panel type to open in a modal editor.")
+		},
+		size: {
+			type: 'object',
+			additionalProperties: false,
+			required: ['width', 'height'],
+			description: localize('vshoon.ui.modalWebviews.size', "Initial modal size, kept separate from other declared modal webviews."),
+			properties: {
+				width: {
+					type: 'integer',
+					minimum: 400,
+					maximum: 2400
+				},
+				height: {
+					type: 'integer',
+					minimum: 300,
+					maximum: 1600
+				}
+			}
+		}
+	}
+};
+
+const osFileDropSchema: IJSONSchema = {
+	type: 'object',
+	additionalProperties: false,
+	required: ['version', 'viewType'],
+	properties: {
+		version: {
+			type: 'number',
+			const: VSHOON_OS_FILE_DROP_CAPABILITY_VERSION,
+			description: localize('vshoon.ui.osFileDrops.version', "VShoon OS file drop capability version.")
+		},
+		viewType: {
+			type: 'string',
+			maxLength: 100,
+			pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]*$',
+			description: localize('vshoon.ui.osFileDrops.viewType', "Webview view that receives files dropped from the operating system.")
 		}
 	}
 };
 
 export const vshoonUIContributionRegistry = markAsSingleton(new VShoonUIContributionRegistry());
 export const vshoonModalWebviewRegistry = markAsSingleton(new VShoonModalWebviewRegistry());
+export const vshoonOsFileDropRegistry = markAsSingleton(new VShoonOsFileDropRegistry());
 const bridge = markAsSingleton(new VShoonUIContributionBridge(vshoonUIContributionRegistry));
 const activeSources = new Set<string>();
 const activeModalWebviewSources = new Set<string>();
+const activeOsFileDropSources = new Set<string>();
 
 export function registerVShoonUIExtensionPoint(extensionsRegistry: IVShoonExtensionsRegistry): void {
 	const headerCommandsExtensionPoint = extensionsRegistry.registerExtensionPoint<unknown[]>({
@@ -171,6 +211,45 @@ export function registerVShoonUIExtensionPoint(extensionsRegistry: IVShoonExtens
 		activeModalWebviewSources.clear();
 		for (const sourceId of nextActiveSources) {
 			activeModalWebviewSources.add(sourceId);
+		}
+	});
+
+	const osFileDropsExtensionPoint = extensionsRegistry.registerExtensionPoint<unknown[]>({
+		extensionPoint: VSHOON_OS_FILE_DROPS_EXTENSION_POINT,
+		jsonSchema: {
+			type: 'array',
+			maxItems: 10,
+			items: osFileDropSchema,
+			description: localize('vshoon.ui.osFileDrops', "Declares bundled webview views that receive files dropped from the operating system.")
+		}
+	});
+
+	osFileDropsExtensionPoint.setHandler(extensions => {
+		const nextActiveSources = new Set<string>();
+		for (const extension of extensions) {
+			const sourceId = extension.description.identifier.value;
+			nextActiveSources.add(sourceId);
+
+			if (!extension.description.isBuiltin) {
+				extension.collector.error(localize('vshoon.ui.osFileDrops.permissionRequired', "VShoon OS file drops are currently available only to bundled extensions."));
+				vshoonOsFileDropRegistry.removeSource(sourceId);
+				continue;
+			}
+
+			const result = vshoonOsFileDropRegistry.update({ id: sourceId, builtin: true }, extension.value);
+			for (const error of result.errors) {
+				extension.collector.error(error);
+			}
+		}
+
+		for (const sourceId of activeOsFileDropSources) {
+			if (!nextActiveSources.has(sourceId)) {
+				vshoonOsFileDropRegistry.removeSource(sourceId);
+			}
+		}
+		activeOsFileDropSources.clear();
+		for (const sourceId of nextActiveSources) {
+			activeOsFileDropSources.add(sourceId);
 		}
 	});
 }

@@ -47,23 +47,29 @@ A bundled extension declares a bounded list under `vshoon.ui.modalWebviews`:
 
 ```json
 [
-  { "version": 1, "viewType": "dbconn.connectionForm" }
+  {
+    "version": 1,
+    "viewType": "dbconn.connectionForm",
+    "size": { "width": 760, "height": 625 }
+  }
 ]
 ```
 
 `src/vs/vshoon/common/modalWebviews.ts` atomically validates and stores the pair of extension
-identifier and webview `viewType`. When that extension creates the panel,
+identifier and webview `viewType`, plus an optional bounded initial size. When that extension creates the panel,
 `MainThreadWebviewPanels` targets upstream's `MODAL_GROUP`; `ModalEditorPart` owns the overlay,
-focus trap, `aria-modal`, keyboard dismissal and outside-click behavior. The declaration cannot
-set markup, styles, commands, dimensions, arbitrary editor types or another extension's panel.
+focus trap, `aria-modal`, keyboard dismissal and outside-click behavior. A declared size is passed
+only for that matching panel, so one bundled panel does not inherit another panel's last size. The
+Workbench still clamps it to the available area. The declaration cannot set markup, styles,
+commands, arbitrary editor types or another extension's panel.
 
 Three bundled panels declare it, and all three used to move themselves into a separate window:
 
 | Extension | View type | Panel |
 | --- | --- | --- |
-| `vshoon-dbconn` | `dbconn.connectionForm` | Connection form |
-| `vshoon-vssh` | `vsshSessionForm` | SSH session form |
-| `vshoon-vsearch` | `vsearch.panel` | Find in Files panel |
+| `vshoon-dbconn` | `dbconn.connectionForm` | Connection form (`760×625`) |
+| `vshoon-vssh` | `vsshSessionForm` | SSH session form (`540×560`) |
+| `vshoon-vsearch` | `vsearch.panel` | Find in Files panel (`1200×700`) |
 
 None of them asks for anything modal any more: each calls `createWebviewPanel` with an ordinary
 view column and the product decides where it lands. In ordinary VS Code the VShoon contribution
@@ -74,6 +80,67 @@ a user gets from `workbench.editor.useModal: 'off'`, which upstream honors ahead
 `npm run smoke:modal-webviews` is the capability's compatibility test. It runs each real command in
 a built VShoon and asserts both halves: the panel is a `role="dialog"` overlay with `aria-modal`
 whose webview is laid out inside it, and no editor tab carries it.
+
+### `workbench.view.osFileDrop`
+
+A bundled extension declares which of its webview views accept files dropped from the operating
+system, under `vshoon.ui.osFileDrops`:
+
+```json
+[
+  {
+    "version": 1,
+    "viewType": "vssh.sftp"
+  }
+]
+```
+
+A webview cannot receive these drops on its own. Upstream's webview preload reports a file drag to
+the host, and `WebviewElement` puts `pointer-events: none` on the iframe for the rest of the
+gesture, so the drop lands on the Workbench instead of the view. Even if it did land there, a
+webview has no way back to a path: Electron removed `File.path` in version 32.
+
+`src/vs/vshoon/common/osFileDrops.ts` validates and stores the pair of extension identifier and
+view type. `WebviewViewPane` then handles the drop where the path is knowable — the Workbench
+renderer, which has `webUtils.getPathForFile` — and posts the resolved paths into the declared view
+on the message channel it already listens to:
+
+```json
+{
+  "type": "vshoon.osFileDrop",
+  "viewType": "vssh.sftp",
+  "paths": ["C:\Users\me\report.pdf"],
+  "position": { "x": 210, "y": 84 }
+}
+```
+
+`position` is relative to the view's own container, which is what lets a two-pane view tell which
+side was targeted. The declaration cannot name another extension's view, reach a view that did not
+declare it, or influence which paths are reported: those come from the drop event itself. A view
+that has not declared the capability keeps upstream behavior exactly, and the files open as editors.
+
+| Extension | View type | View |
+| --- | --- | --- |
+| `vshoon-vssh` | `vssh.sftp` | SFTP two-pane browser |
+
+Windows blocks drag and drop from an ordinary process into an elevated one (UIPI), so a VShoon
+started with administrator rights never sees these drops at all, whatever it declares.
+
+The same declaration also covers the other direction. A declared view sends
+
+```json
+{ "type": "vshoon.osFileDrag", "paths": ["C:\Users\me\report.pdf"] }
+```
+
+on its ordinary webview message channel, and the Workbench starts a native drag of those files so
+Explorer and the desktop accept them. A webview cannot begin such a drag itself, and upstream's own
+drag-out path is limited to a single `file:` URI, so VSH-0013 exposes `webContents.startDrag`
+through `INativeHostService` instead. The paths must already exist; nothing is written on the
+view's behalf, so a view that wants to export a remote file stages a local copy first. At most 100
+paths are accepted and empty ones are rejected.
+
+Because the request arrives from the view's own webview, an extension using this must be able to
+trust its webview content — the same condition the drop direction carries.
 
 ## Validation and Trust Boundary
 
@@ -112,3 +179,9 @@ fallback remains available when the VShoon capability is absent. The Workbench-s
 cover schema registration, bundled acceptance, third-party rejection, and unload cleanup.
 The modal-webview contract tests cover the same lifecycle and additionally verify atomic rejection
 of malformed or duplicate view types.
+
+Bundled modal layouts are remembered by extension id and view type in Workbench renderer memory.
+Closing/reopening a panel restores its size, position, and maximized state; window close or reload
+resets the session. Different windows do not share layouts. The product controller hooks into
+the upstream modal lifecycle, while upstream continues to clamp geometry to the visible bounds.
+There is no additional extension API, persistent storage, or pointer-move IPC.

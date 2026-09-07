@@ -72,6 +72,11 @@ transpiles first for the same reason. `npm run watch` mirrors continuously for a
 files directly under `.core/src/vs/vshoon` is a mistake; the next mirror overwrites them and
 prints the paths it clobbered.
 
+Bundled extensions are compiled in place under `.core/extensions/vshoon-*/out`. Those generated
+`out` directories are deliberately preserved when the source overlay is mirrored, so a packaging
+command issued after `npm run build` cannot discard the extension entry points. Other files that
+exist only in an overlay destination are still removed as stale copies.
+
 The wrapper also sets `BUILD_SOURCEVERSION` to a deterministic SHA-1 of every overlay and patch
 declared by `vshoon.lock.json`, including uncommitted file contents. Upstream otherwise reads the
 Git HEAD of `.core`, which never changes when VShoon's sources change. Since `product.commit` is

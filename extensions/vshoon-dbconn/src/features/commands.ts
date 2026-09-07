@@ -22,6 +22,7 @@ import {
   type ConnectionProfileDraft,
   type ObjectRef,
 } from '../types';
+import { importConnectionsFromVSCode } from '../migrate/importCommand';
 import { log } from '../util/logger';
 import type { ConnectionTreeProvider, TreeNode } from '../views/connectionTree';
 import { openConnectionForm } from '../views/connectionForm';
@@ -382,6 +383,16 @@ export function registerCommands(deps: {
       if (connect === '지금 연결') {
         await connectProfile(profile);
       }
+    }),
+
+    /**
+     * 정품 VS Code 에서 쓰던 연결을 가져온다.
+     *
+     * 앱 데이터 폴더와 확장 ID 가 다르면 저장소가 서로 보이지 않는다 — 손으로
+     * 다시 입력하는 대신, 옛 저장소를 읽어서 비밀번호까지 옮긴다.
+     */
+    vscode.commands.registerCommand('dbconn.importFromVSCode', async () => {
+      await importConnectionsFromVSCode(profiles);
     }),
 
     /** 연결 정보를 URL 한 줄로 복사한다. 비밀번호는 절대 담기지 않는다. */

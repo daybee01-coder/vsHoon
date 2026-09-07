@@ -1,0 +1,165 @@
+- application [ref=e2]:
+  - generic [ref=e6]:
+    - generic [ref=e8]:
+      - menubar [ref=e12]:
+        - menuitem "File" [ref=e13]:
+          - generic [ref=e14]: File
+        - menuitem "Edit" [ref=e15]:
+          - generic [ref=e16]: Edit
+        - menuitem "Selection" [ref=e17]:
+          - generic [ref=e18]: Selection
+        - menuitem "View" [ref=e19]:
+          - generic [ref=e20]: View
+        - menuitem "Go" [ref=e21]:
+          - generic [ref=e22]: Go
+        - menuitem "Run" [ref=e23]:
+          - generic [ref=e24]: Run
+        - menuitem "More" [ref=e25]:
+          - generic [ref=e26]: 
+      - toolbar [ref=e32]:
+        - button "Go Back (Alt+LeftArrow)" [disabled] [ref=e33]: 
+        - button "Go Forward (Alt+RightArrow)" [disabled] [ref=e34]: 
+        - toolbar "Agent Status" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]:
+            - button "Open Quick Access" [ref=e37]:
+              - generic [ref=e38]: Search [Administrator]
+            - generic [ref=e39]:
+              - button "Toggle Chat" [ref=e40]:
+                - button "Toggle Chat" [ref=e41]: 
+              - button "More Actions" [ref=e45]: 
+      - generic [ref=e46]:
+        - toolbar [ref=e50]:
+          - button "Open in Agents Window (Ctrl+Shift+A)" [ref=e51] [cursor=pointer]:
+            - generic: Open in Agents
+          - button "Sign In" [ref=e53] [cursor=pointer]:
+            - generic [ref=e55]: Sign In
+        - toolbar "Title actions" [ref=e59]:
+          - button "Customize Layout..." [ref=e60] [cursor=pointer]: 
+          - button "Toggle Primary Side Bar (Ctrl+B)" [ref=e61] [cursor=pointer]: 
+          - button "Toggle Panel (Ctrl+J)" [ref=e62] [cursor=pointer]: 
+          - button "Toggle Secondary Side Bar (Ctrl+Alt+B)" [ref=e63] [cursor=pointer]: 
+    - generic [ref=e69]:
+      - generic [ref=e71]:
+        - tablist "Active View Switcher" [ref=e74]:
+          - tab "Explorer (Ctrl+Shift+E)" [ref=e75] [cursor=pointer]:
+            - generic "Explorer (Ctrl+Shift+E)" [ref=e76]: 
+          - tab "Search (Ctrl+Shift+F)" [ref=e77] [cursor=pointer]:
+            - generic "Search (Ctrl+Shift+F)" [ref=e78]: 
+          - tab "Source Control (Ctrl+Shift+G)" [ref=e79] [cursor=pointer]:
+            - generic "Source Control (Ctrl+Shift+G)" [ref=e80]: 
+          - tab "Run and Debug (Ctrl+Shift+D)" [ref=e81] [cursor=pointer]:
+            - generic "Run and Debug (Ctrl+Shift+D)" [ref=e82]: 
+          - tab "Extensions (Ctrl+Shift+X)" [ref=e83] [cursor=pointer]:
+            - generic "Extensions (Ctrl+Shift+X)" [ref=e84]: 
+          - tab "Database" [ref=e85] [cursor=pointer]:
+            - generic "Database" [ref=e86]
+          - tab "VSsh" [ref=e87] [cursor=pointer]:
+            - generic "VSsh" [ref=e88]
+        - toolbar "Manage" [ref=e91]:
+          - button "Accounts" [ref=e92] [cursor=pointer]:
+            - generic "Accounts" [ref=e93]: 
+          - button "Manage" [ref=e94] [cursor=pointer]:
+            - generic "Manage" [ref=e95]: 
+      - main [ref=e103]:
+        - generic [ref=e111]:
+          - generic [ref=e113] [cursor=pointer]:
+            - tablist [ref=e114]:
+              - tab "Welcome, preview" [selected] [ref=e115]:
+                - generic "Welcome" [ref=e116]:
+                  - generic [ref=e118]: Welcome
+                - toolbar "Tab actions" [ref=e121]:
+                  - button "Close (Ctrl+F4)" [ref=e122]: 
+            - toolbar "Editor actions" [ref=e126]:
+              - button "Split Editor Right (Ctrl+\\) [Alt] Split Editor Down" [ref=e127]: 
+              - button "More Actions..." [ref=e130]: 
+          - document "Overview of how to get up to speed with your editor." [active] [ref=e133]:
+            - generic [ref=e134]:
+              - generic [ref=e136]:
+                - generic [ref=e137]:
+                  - heading "VShoon Dev" [level=1] [ref=e138]
+                  - paragraph [ref=e139]: Editing evolved
+                - generic [ref=e140]:
+                  - generic [ref=e141]:
+                    - heading "Start" [level=2] [ref=e142]
+                    - list [ref=e143]:
+                      - listitem [ref=e144]:
+                        - button " New File..." [ref=e145] [cursor=pointer]:
+                          - generic [ref=e146]: 
+                          - text: New File...
+                      - listitem [ref=e147]:
+                        - button " Open File..." [ref=e148] [cursor=pointer]:
+                          - generic [ref=e149]: 
+                          - text: Open File...
+                      - listitem [ref=e150]:
+                        - button " Open Folder..." [ref=e151] [cursor=pointer]:
+                          - generic [ref=e152]: 
+                          - text: Open Folder...
+                      - listitem [ref=e153]:
+                        - button " Clone Git Repository..." [ref=e154] [cursor=pointer]:
+                          - generic [ref=e155]: 
+                          - text: Clone Git Repository...
+                      - listitem [ref=e156]:
+                        - button " Connect to..." [ref=e157] [cursor=pointer]:
+                          - generic [ref=e158]: 
+                          - text: Connect to...
+                      - listitem [ref=e159]:
+                        - button " Generate New Workspace..." [ref=e160] [cursor=pointer]:
+                          - generic [ref=e161]: 
+                          - text: Generate New Workspace...
+                  - generic [ref=e162]:
+                    - heading "Recent" [level=2] [ref=e163]
+                    - list [ref=e164]:
+                      - listitem [ref=e165]:
+                        - button "Open folder Hecord with path D:\\project" [ref=e166] [cursor=pointer]: Hecord
+                        - generic "D:\\project\\Hecord" [ref=e167]: D:\project
+                      - listitem [ref=e168]:
+                        - button "Open folder LTVS with path D:\\project" [ref=e169] [cursor=pointer]: LTVS
+                        - generic "D:\\project\\LTVS" [ref=e170]: D:\project
+                      - listitem [ref=e171]:
+                        - button "Open folder VSearch with path D:\\project\\vscode" [ref=e172] [cursor=pointer]: VSearch
+                        - generic "D:\\project\\vscode\\VSearch" [ref=e173]: D:\project\vscode
+                      - listitem [ref=e174]:
+                        - button "Open folder DBconn with path D:\\project\\vscode" [ref=e175] [cursor=pointer]: DBconn
+                        - generic "D:\\project\\vscode\\DBconn" [ref=e176]: D:\project\vscode
+                      - listitem [ref=e177]:
+                        - button "Open folder TSA with path D:\\project" [ref=e178] [cursor=pointer]: TSA
+                        - generic "D:\\project\\TSA" [ref=e179]: D:\project
+                      - button "More..." [ref=e181] [cursor=pointer]
+                - generic [ref=e183]:
+                  - heading "Walkthroughs" [level=2] [ref=e184]
+                  - list [ref=e185]:
+                    - button " Get started with VS Code Customize your editor, learn the basics, and start coding" [ref=e186]:
+                      - generic [ref=e189]: 
+                      - heading "Get started with VS Code" [level=3] [ref=e191]
+                      - generic [ref=e192]: Customize your editor, learn the basics, and start coding
+                      - progressbar [ref=e194]:
+                        - generic "1 of 3 steps complete" [ref=e195]
+                    - button " Learn the Fundamentals" [ref=e196]:
+                      - generic [ref=e197]:
+                        - generic [ref=e198]: 
+                        - heading "Learn the Fundamentals" [level=3] [ref=e199]
+                - paragraph [ref=e201]:
+                  - checkbox "When checked, this page will be shown on startup." [checked] [ref=e202] [cursor=pointer]: 
+                  - generic [ref=e203] [cursor=pointer]: Show welcome page on startup
+              - generic [ref=e204]: 
+    - status [ref=e207]:
+      - generic [ref=e208]:
+        - generic "remote" [ref=e209]:
+          - button "remote" [ref=e210] [cursor=pointer]:
+            - generic [ref=e211]: 
+        - generic "No Problems" [ref=e212]:
+          - button "No Problems" [ref=e213] [cursor=pointer]:
+            - generic [ref=e214]: 
+            - text: "0"
+            - generic [ref=e215]: 
+            - text: "0"
+      - generic [ref=e216]:
+        - generic "Notifications" [ref=e217]:
+          - button "Notifications" [ref=e218] [cursor=pointer]:
+            - generic [ref=e219]: 
+        - generic "Copilot status" [ref=e220]:
+          - button "Copilot status" [ref=e221] [cursor=pointer]:
+            - generic [ref=e222]: 
+  - generic:
+    - alert
+    - alert

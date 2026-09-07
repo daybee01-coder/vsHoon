@@ -16,15 +16,19 @@ import { coreDir, readLock, repoRoot } from './core-paths.mjs';
  * is false, which is exactly how a Windows junction reports itself. A copied tree is
  * indistinguishable from core sources to every tool.
  */
-export function mirrorOverlay({ quiet = false } = {}) {
-	const lock = readLock();
+export function mirrorOverlay({
+	quiet = false,
+	lock = readLock(),
+	sourceRoot = repoRoot,
+	destinationRoot = coreDir
+} = {}) {
 	let copied = 0;
 	let removed = 0;
 	const stale = [];
 
 	for (const entry of lock.overlay) {
-		const source = join(repoRoot, entry);
-		const destination = join(coreDir, entry);
+		const source = join(sourceRoot, entry);
+		const destination = join(destinationRoot, entry);
 		const sourceStat = statSync(source);
 
 		if (sourceStat.isFile()) {
@@ -68,7 +72,7 @@ export function mirrorOverlay({ quiet = false } = {}) {
 		}
 
 		for (const relativePath of walk(destination)) {
-			if (!wanted.has(relativePath)) {
+			if (!wanted.has(relativePath) && !isGeneratedExtensionOutput(entry, relativePath)) {
 				rmSync(join(destination, relativePath), { force: true });
 				removed++;
 			}
@@ -88,6 +92,11 @@ export function mirrorOverlay({ quiet = false } = {}) {
 	}
 
 	return { copied, removed };
+}
+
+/** Extension compilation writes beside the mirrored sources. Keep that output across mirrors. */
+function isGeneratedExtensionOutput(entry, relativePath) {
+	return entry.startsWith('extensions/') && relativePath.split(sep)[0] === 'out';
 }
 
 export function watchOverlay() {

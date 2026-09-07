@@ -101,6 +101,47 @@ URL 이 TLS 를 말하지 않으면 화면의 설정을 건드리지 않는다.
 
 ---
 
+## VS Code 에서 커넥션 가져오기
+
+정품 VS Code 에서 쓰던 연결이 이 창에 보이지 않는 이유는 두 가지다. 앱 데이터 폴더가
+다르고(`%APPDATA%\Code` 와 제품 폴더), 확장 ID 도 바뀌었다. `globalState` 와
+`SecretStorage` 는 둘 다 확장 ID 로 격리되므로, 같은 기계·같은 계정이라도 서로의 저장소를
+볼 수 없다. 14개를 손으로 다시 입력하지 않도록 옮겨 오는 명령을 둔다.
+
+트리 제목의 `…` 메뉴 → **VS Code 에서 커넥션 가져오기** (명령 팔레트에도 같은 이름).
+연결이 하나도 없을 때는 빈 화면의 안내에서도 바로 부를 수 있다.
+
+- 살펴보는 곳은 `Code` · `Code - Insiders` · `VSCodium` 의
+  `User/globalStorage/state.vscdb` 이고, 옛 확장 ID(`dbconn.dbconn`)도 함께 찾는다.
+- 원본이 여러 곳이면 어디서 가져올지 먼저 고르고, 그다음 가져올 연결을 체크한다.
+  **폴더 구조도 함께 온다** — 비어 있던 폴더까지 되살려 트리 모양이 그대로 남는다.
+- 폴더 · 이름 · 접속 정보가 모두 같은 연결은 처음부터 선택이 풀려 있다. 목록을 확인만
+  하고 넘어가도 같은 연결이 두 개로 늘어나지 않는다. 이름만 겹치면 `(복사본)` 을 붙인다.
+- 원본은 **읽기만 한다.** 옛 설치본의 프로필도 비밀번호도 그대로 남으므로, 되돌리려면
+  가져온 연결을 지우면 된다.
+- 정품 VS Code 가 켜져 있어도 된다. 저장소를 임시 폴더로 복사해서 읽기 때문에 파일을
+  붙잡고 있어도 되고, 아직 `-wal` 에만 있는 최근 변경까지 반영된다.
+
+저장소를 통째로 옮기고 싶으면(연결 · 폴더 · 쿼리 이력 · 보관한 SQL 목록까지, 고르는 화면
+없이) 리포지토리 스크립트를 쓴다. **앱을 닫고** 실행한다 — 실행 중이면 앱이 메모리에 든
+값을 나중에 다시 써서 덮어쓸 수 있다. 대상 저장소는 실행 직전에 자동으로 백업된다.
+
+```
+npm run dbconn:copy-store -- --dry-run   # 무엇이 바뀔지만 본다
+npm run dbconn:copy-store                # 실제로 복사
+```
+
+**비밀번호도 함께 온다** — Windows 에서, 같은 사용자 계정으로 로그인해 있을 때.
+저장 경로가 두 겹이기 때문이다: 비밀번호는 Electron `safeStorage` 가 AES-256-GCM 으로
+암호화하고, 그 키는 앱 데이터 폴더의 `Local State` 안에서 DPAPI 가 현재 사용자 계정으로
+보호한다. 그래서 파일만 다른 계정이나 다른 기계로 옮겨서는 읽히지 않는다 —
+이 명령이 되돌릴 수 있는 것도 같은 계정으로 켜져 있는 동안뿐이다.
+macOS · Linux 는 키체인과 시크릿 서비스가 앱 신원을 확인하므로 비밀번호는 넘어오지
+않는다. 그 경우 확인을 한 번 받고 연결 정보만 가져오며, 비밀번호는 처음 접속할 때
+다시 물어본다.
+
+---
+
 ## 실행 계획
 
 `Ctrl+Alt+E` 로 커서 위치 구문의 계획을 본다. 계획 탭은 기존 결과 탭을 밀어내지 않으므로
@@ -582,6 +623,65 @@ MySQL 은 `KILL QUERY`, PostgreSQL 은 `pg_cancel_backend()`, Oracle 은 `break(
 
 ---
 
+## 다른 확장에서 연결 정보 읽기
+
+`activate()` 가 읽기 전용 API 를 돌려준다. 확장이 아직 켜지지 않았을 수
+있으니 `activate()` 를 반드시 `await` 한다.
+
+```ts
+import * as vscode from 'vscode';
+
+const ext = vscode.extensions.getExtension<DbconnApi>('vshoon.vshoon-dbconn');
+const api = await ext?.activate();
+
+for (const profile of api?.getProfiles() ?? []) {
+  console.log(profile.name, api?.getConnectionUrl(profile.id), profile.connected);
+}
+
+api?.onDidChangeProfiles(() => refreshMyView());
+```
+
+타입은 이 인터페이스를 복사해 쓰면 된다 (`src/api.ts` 가 원본).
+
+```ts
+interface DbconnApi {
+  readonly version: 1;
+  getProfiles(): DbconnProfileInfo[];
+  getProfile(id: string): DbconnProfileInfo | undefined;
+  /** 비밀번호가 없는 표시용 URL. */
+  getConnectionUrl(id: string): string | undefined;
+  readonly onDidChangeProfiles: vscode.Event<void>;
+}
+
+interface DbconnProfileInfo {
+  readonly id: string;
+  readonly name: string;
+  readonly dialect: 'mysql' | 'mariadb' | 'postgres' | 'oracle';
+  readonly host: string;
+  readonly port: number;
+  readonly database: string;
+  readonly user: string;
+  readonly environment: 'development' | 'staging' | 'production';
+  readonly readOnly: boolean;
+  readonly tlsEnabled: boolean;
+  readonly folder: string | undefined;
+  readonly connected: boolean;
+}
+```
+
+일부러 뺀 것이 둘 있다.
+
+- **비밀번호.** `SecretStorage` 밖으로 나가지 않는다. 다른 확장이 조용히
+  자격 증명을 긁어 가는 경로를 만들지 않는다.
+- **쓰기.** 프로필 추가·수정·삭제는 사용자가 이 확장의 UI 에서 한다.
+  남의 확장이 목록을 바꿔 놓으면 사용자가 원인을 찾을 수 없다.
+
+`getProfiles()` 가 주는 필드만 계약이다. 풀 옵션이나 인증서 경로처럼 내부
+사정에 따라 바뀌는 필드는 담기지 않는다. 계약을 깨는 변경에는 `version` 이
+올라간다.
+
+---
+
 ## 보안
 
 | 영역 | 조치 |
@@ -599,7 +699,9 @@ MySQL 은 `KILL QUERY`, PostgreSQL 은 `pg_cancel_backend()`, Oracle 은 `break(
 | TLS | 기본 검증 켬. 끄려면 명시적 경고를 거쳐야 하고, 사설 CA 는 파일 경로로 지정 |
 | 읽기 전용 | 서버 세션을 읽기 전용으로 설정 + 클라이언트에서 쓰기 구문 차단 (이중 방어) |
 | 위험 구문 | `WHERE` 없는 `UPDATE`/`DELETE`, `DROP`/`TRUNCATE` 는 실행 전 모달 확인 |
+| 공개 API | 다른 확장에는 연결 메타데이터만 읽기 전용으로 내보낸다. 비밀번호와 쓰기 경로는 API 에 없다 |
 | 로그 | 비밀번호·접속 문자열 자격 증명을 정규식으로 마스킹 |
+| 가져오기 | 다른 설치본의 저장소는 임시 복사본으로 읽기만 한다. 복호화한 비밀번호는 `SecretStorage` 로 바로 들어가고 화면·클립보드·로그를 거치지 않는다. 복호화는 같은 Windows 사용자 계정에서만 가능하다 |
 | 메모리 | 셀 값 64KB, 고정하지 않은 결과 탭 12개로 제한. 대용량 조회는 서버 측 `LIMIT` 으로 자름 |
 | 그리드 편집 | 단일 테이블 + 기본 키 완비일 때만 허용. 값은 바인드 파라미터, 적용 전 확인, 영향 행 수 검증 |
 
@@ -668,7 +770,8 @@ src/
 ├── metadata/     스키마 캐시 + 객체 상세 수집
 ├── features/     자동 완성(+분류 순환), 실행·계획, 행 편집, 초안 캐시, 실행 이력, 명령
 ├── views/        트리, 결과 패널, 객체 상세 패널, 상태바, 연결 폼(웹뷰)
-└── config/       프로필 저장소 (SecretStorage) + 연결 폴더 경로 + 환경 표시 규칙
+├── config/       프로필 저장소 (SecretStorage) + 연결 폴더 경로 + 환경 표시 규칙
+└── api.ts        다른 확장에 공개하는 읽기 전용 API (비밀번호·쓰기 제외)
 ```
 
 각 DB 라이브러리의 타입은 `db/{dialect}/driver.ts` 안에서만 존재하고

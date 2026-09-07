@@ -17,7 +17,11 @@
     "vshoon.ui.modalWebviews": [
       {
         "version": 1,
-        "viewType": "vsearch.panel"
+        "viewType": "vsearch.panel",
+        "size": {
+          "width": 1200,
+          "height": 700
+        }
       }
     ],
     "commands": [
@@ -40,7 +44,8 @@
     "keybindings": [
       {
         "command": "vsearch.open",
-        "key": "shift shift"
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f"
       },
       {
         "command": "vsearch.openReplace",

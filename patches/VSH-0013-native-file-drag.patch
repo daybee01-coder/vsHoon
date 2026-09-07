@@ -1,0 +1,98 @@
+diff --git a/src/vs/platform/native/common/native.ts b/src/vs/platform/native/common/native.ts
+index 1c62eb7cfef7..d078db3f09d7 100644
+--- a/src/vs/platform/native/common/native.ts
++++ b/src/vs/platform/native/common/native.ts
+@@ -325,6 +325,11 @@ export interface ICommonNativeHostService {
+ 
+ 	// OS
+ 	showItemInFolder(path: string): Promise<void>;
++	/**
++	 * Starts a native drag of existing local files, so the operating system's own drop targets
++	 * accept them. The paths must already exist; nothing is written on the caller's behalf.
++	 */
++	startFileDrag(paths: string[], options?: INativeHostOptions): Promise<void>;
+ 	setRepresentedFilename(path: string, options?: INativeHostOptions): Promise<void>;
+ 	setDocumentEdited(edited: boolean, options?: INativeHostOptions): Promise<void>;
+ 	/**
+diff --git a/src/vs/platform/native/electron-main/nativeHostMainService.ts b/src/vs/platform/native/electron-main/nativeHostMainService.ts
+index b1fb89e25a3a..7390d61a69cf 100644
+--- a/src/vs/platform/native/electron-main/nativeHostMainService.ts
++++ b/src/vs/platform/native/electron-main/nativeHostMainService.ts
+@@ -5,7 +5,7 @@
+ 
+ import * as fs from 'fs';
+ import { exec } from 'child_process';
+-import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, shell, systemPreferences, webContents } from 'electron';
++import { app, BrowserWindow, clipboard, contentTracing, Display, Menu, MessageBoxOptions, MessageBoxReturnValue, nativeImage, Notification, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, powerMonitor, powerSaveBlocker, SaveDialogOptions, SaveDialogReturnValue, screen, shell, systemPreferences, webContents } from 'electron';
+ import { arch, cpus, freemem, loadavg, platform, release, totalmem, type } from 'os';
+ import { promisify } from 'util';
+ import { memoize } from '../../../base/common/decorators.js';
+@@ -644,6 +644,19 @@ export class NativeHostMainService extends Disposable implements INativeHostMain
+ 		shell.showItemInFolder(path);
+ 	}
+ 
++	async startFileDrag(windowId: number | undefined, paths: string[], options?: INativeHostOptions): Promise<void> {
++		const window = this.windowById(options?.targetWindowId, windowId);
++		const contents = window?.win?.webContents;
++		if (!contents || paths.length === 0) {
++			return;
++		}
++
++		// Electron rejects an empty icon, and the shell draws the drag image from the file list
++		// anyway, so a 1x1 transparent bitmap is all this needs.
++		const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
++		contents.startDrag({ files: paths, file: paths[0], icon });
++	}
++
+ 	async setRepresentedFilename(windowId: number | undefined, path: string, options?: INativeHostOptions): Promise<void> {
+ 		const window = this.windowById(options?.targetWindowId, windowId);
+ 		window?.setRepresentedFilename(path);
+diff --git a/src/vs/workbench/electron-browser/desktop.contribution.ts b/src/vs/workbench/electron-browser/desktop.contribution.ts
+index 41250d7b7148..126d4d307773 100644
+--- a/src/vs/workbench/electron-browser/desktop.contribution.ts
++++ b/src/vs/workbench/electron-browser/desktop.contribution.ts
+@@ -15,6 +15,8 @@ import { ContextKeyExpr } from '../../platform/contextkey/common/contextkey.js';
+ import { KeybindingsRegistry, KeybindingWeight } from '../../platform/keybinding/common/keybindingsRegistry.js';
+ import { CommandsRegistry } from '../../platform/commands/common/commands.js';
+ import { ServicesAccessor } from '../../platform/instantiation/common/instantiation.js';
++import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../common/contributions.js';
++import { registerVShoonOsFileDrag } from '../../vshoon/electron-browser/osFileDrag.js';
+ import { IsMacContext } from '../../platform/contextkey/common/contextkeys.js';
+ import { INativeHostService } from '../../platform/native/common/native.js';
+ import { IJSONContributionRegistry, Extensions as JSONExtensions } from '../../platform/jsonschemas/common/jsonContributionRegistry.js';
+@@ -487,3 +489,23 @@ import product from '../../platform/product/common/product.js';
+ 
+ 	jsonRegistry.registerSchema(argvDefinitionFileSchemaId, schema);
+ })();
++
++// #region VShoon native file drag
++
++/**
++ * Installs the implementation a declared webview view uses to hand a drag of local files to the
++ * operating system. The seam that receives the request lives in the browser layer and cannot reach
++ * a native service, so the wiring belongs here, where one is available.
++ */
++class VShoonOsFileDragContribution implements IWorkbenchContribution {
++
++	static readonly ID = 'workbench.contrib.vshoonOsFileDrag';
++
++	constructor(@INativeHostService nativeHostService: INativeHostService) {
++		registerVShoonOsFileDrag(nativeHostService);
++	}
++}
++
++registerWorkbenchContribution2(VShoonOsFileDragContribution.ID, VShoonOsFileDragContribution, WorkbenchPhase.BlockRestore);
++
++// #endregion
+diff --git a/src/vs/workbench/test/electron-browser/workbenchTestServices.ts b/src/vs/workbench/test/electron-browser/workbenchTestServices.ts
+index d1f369e30e91..302be6f276ba 100644
+--- a/src/vs/workbench/test/electron-browser/workbenchTestServices.ts
++++ b/src/vs/workbench/test/electron-browser/workbenchTestServices.ts
+@@ -133,6 +133,7 @@ export class TestNativeHostService implements INativeHostService {
+ 	async pickFolderAndOpen(options: INativeOpenDialogOptions): Promise<void> { }
+ 	async pickWorkspaceAndOpen(options: INativeOpenDialogOptions): Promise<void> { }
+ 	async showItemInFolder(path: string): Promise<void> { }
++	async startFileDrag(paths: string[]): Promise<void> { }
+ 	async setRepresentedFilename(path: string): Promise<void> { }
+ 	async isAdmin(): Promise<boolean> { return false; }
+ 	async writeElevated(source: URI, target: URI): Promise<void> { }

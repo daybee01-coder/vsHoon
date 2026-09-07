@@ -1,0 +1,146 @@
+diff --git a/src/vs/workbench/contrib/webviewView/browser/webviewViewPane.ts b/src/vs/workbench/contrib/webviewView/browser/webviewViewPane.ts
+index ec2ba39e773a..8c2dcf8cf73a 100644
+--- a/src/vs/workbench/contrib/webviewView/browser/webviewViewPane.ts
++++ b/src/vs/workbench/contrib/webviewView/browser/webviewViewPane.ts
+@@ -4,6 +4,10 @@
+  *--------------------------------------------------------------------------------------------*/
+ 
+ import { addDisposableListener, EventType, findParentWithClass, getWindow } from '../../../../base/browser/dom.js';
++import { DataTransfers } from '../../../../base/browser/dnd.js';
++import { containsDragType, getPathForFile } from '../../../../platform/dnd/browser/dnd.js';
++import { IVShoonOsFileDropPayload, readOsFileDragRequest, VSHOON_OS_FILE_DROP_MESSAGE, vshoonOsFileDragDelegate } from '../../../../vshoon/common/osFileDrops.js';
++import { vshoonOsFileDropRegistry } from '../../../../vshoon/browser/uiExtensionPoint.js';
+ import { CancellationTokenSource } from '../../../../base/common/cancellation.js';
+ import { Emitter } from '../../../../base/common/event.js';
+ import { DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+@@ -48,6 +52,8 @@ export class WebviewViewPane extends ViewPane {
+ 	}
+ 
+ 	private readonly _webview = this._register(new MutableDisposable<IOverlayWebview>());
++	private readonly _vshoonOsFileTransferListeners = this._register(new MutableDisposable<DisposableStore>());
++	private _vshoonOsFileTransferContainer: HTMLElement | undefined;
+ 	private readonly _webviewDisposables = this._register(new DisposableStore());
+ 	private _activated = false;
+ 
+@@ -119,6 +125,105 @@ export class WebviewViewPane extends ViewPane {
+ 		this._webview.value?.focus();
+ 	}
+ 
++	/**
++	 * Carries files between a bundled view and the operating system, in both directions.
++	 *
++	 * A webview cannot resolve a dropped file to a path, so upstream takes these drops away from
++	 * the iframe — it sets `pointer-events: none` on it for the duration of the drag — and lets
++	 * them land on the Workbench instead. That is the only place the path is knowable, so a view
++	 * that declared `vshoon.ui.osFileDrops` is told about the drop from here. The message goes out
++	 * on the channel the view already listens to, which keeps this seam to one file and adds no
++	 * extension host API.
++	 *
++	 * The listeners belong on the webview's own overlay container, not on the view body: the
++	 * overlay is mounted at the document root and keeps `pointer-events: auto`, so it, and not the
++	 * body underneath it, is what a drop actually lands on once the iframe stops taking events.
++	 */
++	private registerVShoonOsFileTransfer(): void {
++		const webview = this._webview.value;
++		if (!webview) {
++			return;
++		}
++
++		// Moving the view to another window rebuilds the overlay, and the old element then receives
++		// nothing, so re-attach whenever this is not the container already being listened to.
++		const container = webview.container;
++		if (this._vshoonOsFileTransferContainer === container) {
++			return;
++		}
++
++		const declared = () => {
++			const extensionId = this.extensionId?.value;
++			return !!extensionId && vshoonOsFileDropRegistry.isOsFileDropView(extensionId, this.id);
++		};
++
++		const listeners = new DisposableStore();
++		listeners.add(addDisposableListener(container, EventType.DRAG_OVER, e => {
++			if (!declared() || !containsDragType(e, DataTransfers.FILES)) {
++				return;
++			}
++
++			// Without both of these the drop never fires here: the browser cancels it, and the
++			// Workbench would otherwise open the files as editors.
++			e.preventDefault();
++			e.stopPropagation();
++			if (e.dataTransfer) {
++				e.dataTransfer.dropEffect = 'copy';
++			}
++		}));
++
++		listeners.add(addDisposableListener(container, EventType.DROP, e => {
++			if (!declared() || !containsDragType(e, DataTransfers.FILES)) {
++				return;
++			}
++
++			e.preventDefault();
++			e.stopPropagation();
++
++			const paths: string[] = [];
++			for (const file of Array.from(e.dataTransfer?.files ?? [])) {
++				const path = getPathForFile(file);
++				if (path) {
++					paths.push(path);
++				}
++			}
++
++			if (paths.length === 0) {
++				return;
++			}
++
++			// The view lays out two panes side by side, so it needs to know which one was under the
++			// pointer. The overlay sits exactly over the webview, so these coordinates are the ones
++			// the view itself sees.
++			const bounds = container.getBoundingClientRect();
++			const payload: IVShoonOsFileDropPayload = {
++				type: VSHOON_OS_FILE_DROP_MESSAGE,
++				viewType: this.id,
++				paths,
++				position: { x: e.clientX - bounds.left, y: e.clientY - bounds.top }
++			};
++			webview.postMessage(payload);
++		}));
++
++		// The other direction. The view asks for the drag once it has real local paths to offer,
++		// which for a remote file means it staged a copy first. Only Electron can put a drag in
++		// front of the shell, and this layer may not reach it, so the request goes through the
++		// delegate the desktop layer fills in.
++		listeners.add(webview.onMessage(event => {
++			if (!declared()) {
++				return;
++			}
++
++			const paths = readOsFileDragRequest(event.message);
++			if (paths) {
++				vshoonOsFileDragDelegate.start(paths);
++			}
++		}));
++
++		this._vshoonOsFileTransferListeners.value = listeners;
++		this._vshoonOsFileTransferContainer = container;
++	}
++
+ 	protected override renderBody(container: HTMLElement): void {
+ 		super.renderBody(container);
+ 
+@@ -153,6 +258,7 @@ export class WebviewViewPane extends ViewPane {
+ 		if (this.isBodyVisible()) {
+ 			this.activate();
+ 			this._webview.value?.claim(this, getWindow(this.element), undefined);
++			this.registerVShoonOsFileTransfer();
+ 		} else {
+ 			this._webview.value?.release(this);
+ 		}
+@@ -176,6 +282,7 @@ export class WebviewViewPane extends ViewPane {
+ 		});
+ 		webview.state = this.viewState[storageKeys.webviewState];
+ 		this._webview.value = webview;
++		this.registerVShoonOsFileTransfer();
+ 
+ 		this.layoutWebview();
+ 

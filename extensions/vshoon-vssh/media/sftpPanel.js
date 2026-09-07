@@ -456,6 +456,15 @@
             st.anchor = idx;
             applySelectionClasses();
           }
+
+          if (name === 'local') {
+            // 로컬 항목은 이미 실경로가 있어 셸이 그대로 가져갈 수 있다. 웹뷰는 OS 드래그를 시작할
+            // 수 없으므로 확장에 경로 확정을 맡긴다. 패널 안에 다시 놓으면 OS 드롭으로 되돌아온다.
+            e.preventDefault();
+            post({ type: 'osDragStart', pane: name, names: Array.from(st.selected) });
+            return;
+          }
+
           activeDragPayload = { pane: name, names: Array.from(st.selected) };
           const serialized = JSON.stringify(activeDragPayload);
           e.dataTransfer.effectAllowed = 'copy';
@@ -632,6 +641,32 @@
     }
   }
 
+  // ---- 탐색기에서 끌어온 파일 ------------------------------------------------
+  // 웹뷰는 OS 드롭을 직접 받을 수 없다. Workbench가 경로를 풀어 이 메시지로 넘겨주므로,
+  // 여기서는 포인터가 어느 패널의 무엇 위에 있었는지만 판단해 확장에 전달한다.
+  function resolveOsDropTarget(position) {
+    const x = Number(position && position.x);
+    const y = Number(position && position.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    const at = document.elementFromPoint(x, y);
+    const paneEl = at && at.closest ? at.closest('.pane[data-pane]') : null;
+    if (!paneEl) {
+      // 스플리터나 여백 위에서 놓았을 수 있다. 그 x를 품는 패널로 되돌린다.
+      for (const candidate of document.querySelectorAll('.pane[data-pane]')) {
+        const r = candidate.getBoundingClientRect();
+        if (x >= r.left && x <= r.right) return { pane: candidate.dataset.pane, intoDir: undefined };
+      }
+      return null;
+    }
+
+    const rowEl = at.closest('.row[data-name]');
+    const name = rowEl ? rowEl.dataset.name : undefined;
+    const pane = paneEl.dataset.pane;
+    const isDir = !!name && (state[pane].entries || []).some((e) => e.name === name && e.isDirectory);
+    return { pane, intoDir: isDir ? name : undefined };
+  }
+
   // ---- 확장 -> 웹뷰 메시지 --------------------------------------------------
   window.addEventListener('message', (event) => {
     const msg = event.data;
@@ -662,6 +697,20 @@
       case 'toggleQueue':
         setQueueVisible(!state.queueVisible);
         break;
+      case 'vshoon.osFileDragReady': {
+        // 확장이 확정한 경로를 그대로 되돌려 보낸다. Workbench seam이 이 메시지를 보고 셸 드래그를
+        // 시작한다 — 웹뷰가 직접 할 수 없는 일이다.
+        if (Array.isArray(msg.paths) && msg.paths.length) {
+          post({ type: 'vshoon.osFileDrag', paths: msg.paths });
+        }
+        break;
+      }
+      case 'vshoon.osFileDrop': {
+        const target = resolveOsDropTarget(msg.position);
+        if (!target || !Array.isArray(msg.paths) || !msg.paths.length) break;
+        post({ type: 'osFileDrop', pane: target.pane, paths: msg.paths, intoDir: target.intoDir });
+        break;
+      }
     }
   });
 

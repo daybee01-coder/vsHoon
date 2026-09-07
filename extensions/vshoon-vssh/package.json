@@ -16,7 +16,17 @@
     "vshoon.ui.modalWebviews": [
       {
         "version": 1,
-        "viewType": "vsshSessionForm"
+        "viewType": "vsshSessionForm",
+        "size": {
+          "width": 540,
+          "height": 560
+        }
+      }
+    ],
+    "vshoon.ui.osFileDrops": [
+      {
+        "version": 1,
+        "viewType": "vssh.sftp"
       }
     ],
     "viewsContainers": {
@@ -341,6 +351,11 @@
           "description": "파일 전송 시 원본의 권한과 수정 시각을 최대한 보존합니다 (서버가 허용하지 않으면 조용히 건너뜁니다)."
         }
       }
+    },
+    "configurationDefaults": {
+      "terminal.integrated.copyOnSelection": true,
+      "terminal.integrated.rightClickBehavior": "paste",
+      "terminal.integrated.scrollback": 50000
     }
   },
   "activationEvents": [],
@@ -350,11 +365,6 @@
   },
   "devDependencies": {
     "@types/ssh2": "^1.15.5"
-  },
-  "dependencies": {
-    "iconv-lite": "^0.6.3",
-    "ppk-to-openssh": "^3.2.0",
-    "ssh2": "^1.16.0"
   },
   "license": "MIT"
 }

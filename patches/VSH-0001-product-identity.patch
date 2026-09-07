@@ -1,8 +1,8 @@
 diff --git a/product.json b/product.json
-index 47016c085d19..785c7d8908d2 100644
+index 47016c085d19..2a33dfe69e65 100644
 --- a/product.json
 +++ b/product.json
-@@ -1,39 +1,55 @@
+@@ -1,39 +1,61 @@
  {
 -	"nameShort": "Code - OSS",
 -	"nameLong": "Code - OSS",
@@ -77,6 +77,12 @@ index 47016c085d19..785c7d8908d2 100644
 +		"controlUrl": "",
 +		"nlsBaseUrl": "",
 +		"vshoonRepositorySigned": false
++	},
++	"extensionEnabledApiProposals": {
++		"openai.chatgpt": [
++			"languageModelProxy",
++			"chatSessionsProvider"
++		]
 +	},
  	"agentsTelemetryAppName": "agents",
  	"webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",

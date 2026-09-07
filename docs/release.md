@@ -61,10 +61,14 @@ The checks worth running before a package build, none of which needs a package: 
 drive the real application; `smoke:ui-extension` fails with a missing-module error if the built-in
 extensions were never compiled, and `smoke:modal-webviews` says so up front.
 
-Mind the order: anything that reaches the core mirrors the overlay first, and the mirror removes
-whatever the core copy holds that the sources do not — which includes every bundled extension's
-compiled `out`. So run `npm run build` *after* the unit tests, not before, or the smoke tests find
-no extensions to drive.
+`npm run smoke:modal-webviews -- --remember-layout` adds the layout half of VSH-0010: it resizes
+and moves each panel, closes it, opens it again and asserts the modal comes back with the geometry
+it was left at. That roughly doubles the run, so the plain form stays the default.
+
+Run `npm run build` before the smoke tests and packaging so every bundled extension has its
+compiled `out/extension.js`. Commands routed through the core mirror the current overlay first;
+the mirror preserves these generated extension `out` directories while continuing to remove
+other stale files.
 
 ### When a build fails
 

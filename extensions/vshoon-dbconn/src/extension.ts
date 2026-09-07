@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createDbconnApi, type DbconnApi } from './api';
 import { ProfileStore } from './config/profileStore';
 import { ConnectionManager } from './db/connectionManager';
 import { registerCommands } from './features/commands';
@@ -28,7 +29,7 @@ import { StatusBar } from './views/statusBar';
 
 let connections: ConnectionManager | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): DbconnApi {
   log.init();
   log.info('DBConn 활성화');
 
@@ -145,6 +146,22 @@ export function activate(context: vscode.ExtensionContext): void {
   // 이전 세션에서 남은 초안 알림은 명령 등록이 끝난 뒤에 — 사용자가
   // "목록 보기"를 누르면 곧바로 명령이 실행되기 때문이다.
   void scripts.promptRestore();
+
+  // 다른 확장이 연결 목록을 읽을 수 있게 한다. 프로필 변경과 접속 상태
+  // 변경은 서로 다른 곳에서 나므로 하나의 이벤트로 합쳐 내보낸다 —
+  // 소비자가 두 군데를 구독할 이유가 없다.
+  const apiChange = new vscode.EventEmitter<void>();
+  context.subscriptions.push(
+    apiChange,
+    profiles.onDidChange(() => apiChange.fire()),
+    manager.onDidChange(() => apiChange.fire()),
+  );
+
+  return createDbconnApi({
+    listProfiles: () => profiles.list(),
+    isConnected: (profileId) => manager.isConnected(profileId),
+    onDidChange: apiChange.event,
+  });
 }
 
 /**

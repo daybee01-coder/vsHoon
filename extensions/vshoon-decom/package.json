@@ -109,8 +109,5 @@
     "compile": "gulp compile-extension:vshoon-decom",
     "watch": "gulp watch-extension:vshoon-decom"
   },
-  "devDependencies": {},
-  "dependencies": {
-    "adm-zip": "^0.6.0"
-  }
+  "devDependencies": {}
 }

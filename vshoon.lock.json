@@ -46,7 +46,9 @@
 		"VSH-0008-default-locale.patch",
 		"VSH-0009-unsigned-gallery.patch",
 		"VSH-0010-modal-webviews.patch",
-		"VSH-0011-file-dialog-seam.patch"
+		"VSH-0011-file-dialog-seam.patch",
+		"VSH-0012-os-file-drops.patch",
+		"VSH-0013-native-file-drag.patch"
 	],
 	"$languagePacksComment": "Display language translations. They are Microsoft's, MIT licensed, and released on their own schedule, so they are pinned and fetched like the core rather than committed. `npm run sync:i18n` regenerates the built-in packs.",
 	"languagePacks": {

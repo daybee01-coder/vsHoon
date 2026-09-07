@@ -252,15 +252,4 @@ VShoon 기능을 비활성화하면 upstream 동작과 같아야 한다.
 
 
 ## 13. 추가개발
-- D:\project\vscode\DBconn
-- 위 경로의 플러그인을 기본 플러그인으로 병합
-- 플러그인의 커넥션 설정창이 새창으로 뜨는데 모달형태로 변경
-
-## 14. 추가개발2
-- D:\project\vscode\VSsh
-- D:\project\vscode\VSearch
-- 위 경로에 있는 플러그인도 동일하게 병합
-
-## 15. 추가개발
-- 윈도우 기본 파일 선택기를 사용하는데 현재 ui와 통일감있게 파일선택기 개발
-- D:\project\vscode\Decom 플러그인도 기본 기능으로 병합
+Development.md 파일 참고

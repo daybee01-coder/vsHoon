@@ -32,14 +32,14 @@ import {
  * 그래야 프로필을 로깅하거나 웹뷰로 보내도 사고가 나지 않는다.
  */
 
-const PROFILES_KEY = 'dbconn.profiles.v1';
+export const PROFILES_KEY = 'dbconn.profiles.v1';
 /**
  * 폴더 경로 목록. 프로필이 하나도 없는 빈 폴더를 기억하기 위한 것이다 —
  * 폴더는 프로필의 folder 필드에서 유도되므로, 이 목록이 없으면
  * 방금 만든 빈 폴더가 새로고침과 함께 사라진다.
  */
-const FOLDERS_KEY = 'dbconn.folders.v1';
-const SECRET_PREFIX = 'dbconn.password.';
+export const FOLDERS_KEY = 'dbconn.folders.v1';
+export const PASSWORD_SECRET_PREFIX = 'dbconn.password.';
 
 export class ProfileStore {
   private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
@@ -53,7 +53,7 @@ export class ProfileStore {
       return [];
     }
     return raw
-      .map((item) => normalizeProfile(item))
+      .map((item) => normalizeStoredProfile(item))
       .filter((p): p is ConnectionProfile => p !== undefined)
       .sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -287,7 +287,7 @@ export class ProfileStore {
 
   async getPassword(id: string): Promise<string | undefined> {
     try {
-      return await this.context.secrets.get(SECRET_PREFIX + id);
+      return await this.context.secrets.get(PASSWORD_SECRET_PREFIX + id);
     } catch (error) {
       // 키체인이 잠겨 있거나 접근이 거부된 경우.
       log.warn('저장된 비밀번호를 읽지 못했습니다.', error);
@@ -296,12 +296,12 @@ export class ProfileStore {
   }
 
   async setPassword(id: string, password: string): Promise<void> {
-    await this.context.secrets.store(SECRET_PREFIX + id, password);
+    await this.context.secrets.store(PASSWORD_SECRET_PREFIX + id, password);
   }
 
   async deletePassword(id: string): Promise<void> {
     try {
-      await this.context.secrets.delete(SECRET_PREFIX + id);
+      await this.context.secrets.delete(PASSWORD_SECRET_PREFIX + id);
     } catch (error) {
       log.debug('비밀번호 삭제 실패 (무시)', error);
     }
@@ -342,7 +342,7 @@ export function poolOptionsFromSettings(): PoolOptions {
  * 저장된 JSON 을 신뢰하지 않고 검증한다.
  * globalState 는 다른 확장 버전이 쓴 값일 수 있고, 손상됐을 수도 있다.
  */
-function normalizeProfile(raw: unknown): ConnectionProfile | undefined {
+export function normalizeStoredProfile(raw: unknown): ConnectionProfile | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
