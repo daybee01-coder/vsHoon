@@ -1,6 +1,6 @@
 {
-	"displayName": "VShoon Start Window",
-	"description": "Contributes the settings that govern the VShoon start window.",
-	"configuration.title": "VShoon",
-	"configuration.enabled.description": "Show the VShoon start window when VShoon is launched without a file, folder, or workspace to open. When disabled, such a launch opens the workbench directly. Use `--disable-start-window` to skip the start window for a single launch."
+	"displayName": "vs Hoon Start Window",
+	"description": "Contributes the settings that govern the vs Hoon start window.",
+	"configuration.title": "vs Hoon",
+	"configuration.enabled.description": "Show the vs Hoon start window when vs Hoon is launched without a file, folder, or workspace to open. When disabled, such a launch opens the workbench directly. Use `--disable-start-window` to skip the start window for a single launch."
 }

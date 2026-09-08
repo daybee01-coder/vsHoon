@@ -79,7 +79,7 @@ export interface IVShoonStartWindowMainService {
 	 * only initializes at `LifecycleMainPhase.AfterWindowOpen`, which `CodeApplication` sets after
 	 * `openFirstWindow` returns, and the recent list cannot be read before that.
 	 */
-	show(): Promise<void>;
+	show(options?: { readonly quitWhenClosed?: boolean }): Promise<boolean>;
 
 	/** Brings the start window back to the foreground for a second launch request. */
 	focus(): void;
@@ -97,6 +97,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 	private window: BrowserWindow | undefined;
 	private state: 'closed' | 'showing' | 'released' = 'closed';
 	private releaseHandle: Timeout | undefined;
+	private quitWhenClosed = true;
 
 	/** The model the renderer currently shows, and the only ids an action may name. */
 	private projects: readonly IVShoonRecentProject[] = [];
@@ -118,16 +119,23 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		return this.state === 'showing';
 	}
 
-	async show(): Promise<void> {
+	async show(options?: { readonly quitWhenClosed?: boolean }): Promise<boolean> {
 		if (this.state !== 'closed') {
-			throw new Error('VShoon start window is already open.');
+			if (this.state === 'showing') {
+				this.focus();
+
+				return true;
+			}
+
+			return false;
 		}
 
 		this.state = 'showing';
+		this.quitWhenClosed = options?.quitWhenClosed !== false;
 		const theme = this.getTheme();
 
 		const window = this.window = new BrowserWindow({
-			title: 'VShoon',
+			title: 'vs Hoon',
 			width: 720,
 			height: 520,
 			minWidth: 560,
@@ -184,7 +192,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 			// Closing the window while it is still loading rejects `loadURL`. The launcher is
 			// already gone at that point, so the launch must not fail because of it.
 			if (!this.window) {
-				return;
+				return true;
 			}
 
 			this.logService.error('vshoon#startWindow: failed to load', error);
@@ -193,6 +201,8 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 
 			throw error;
 		}
+
+		return true;
 	}
 
 	/**
@@ -204,7 +214,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		this.state = 'closed';
 		this.windowDisposables.clear();
 
-		if (wasOwningLaunch) {
+		if (wasOwningLaunch && this.quitWhenClosed) {
 			this.lifecycleMainService.quit();
 		}
 	}
@@ -432,6 +442,8 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		const handle = this.releaseHandle = setInterval(() => {
 			if (BrowserWindow.getAllWindows().some(window => window !== this.window)) {
 				clearInterval(handle);
+				this.releaseHandle = undefined;
+				this.state = 'closed';
 				this.windowDisposables.clear();
 			}
 		}, 50);

@@ -13,7 +13,7 @@ VShoon은 Code - OSS를 기반으로 하며 VS Code의 핵심 기능을 유지�
 
 제품 식별자는 다음과 같다.
 
-- 제품명: `VShoon`
+- 제품명: `vs Hoon`
 - 애플리케이션 이름: `vshoon`
 - 사용자 데이터 디렉터리: `.vshoon`
 - 설정 및 명령 접두사: `vshoon.*`

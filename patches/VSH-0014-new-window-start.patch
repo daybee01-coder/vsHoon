@@ -1,0 +1,29 @@
+diff --git a/src/vs/platform/window/common/window.ts b/src/vs/platform/window/common/window.ts
+index d073d011d56c..bd8eaac481b6 100644
+--- a/src/vs/platform/window/common/window.ts
++++ b/src/vs/platform/window/common/window.ts
+@@ -102,7 +102,10 @@ export function isOpenedAuxiliaryWindow(candidate: IOpenedMainWindow | IOpenedAu
+ 	return typeof (candidate as IOpenedAuxiliaryWindow).parentId === 'number';
+ }
+ 
+-export interface IOpenEmptyWindowOptions extends IBaseOpenWindowsOptions { }
++export interface IOpenEmptyWindowOptions extends IBaseOpenWindowsOptions {
++	/** VShoon: open the compact project chooser instead of an empty Workbench window. */
++	readonly vshoonStartWindow?: boolean;
++}
+ 
+ export const enum AgentsWindowOpenSource {
+ 	CommandPalette = 'commandPalette',
+diff --git a/src/vs/workbench/browser/actions/windowActions.ts b/src/vs/workbench/browser/actions/windowActions.ts
+index 724c38ffcb72..aef5a8b860bf 100644
+--- a/src/vs/workbench/browser/actions/windowActions.ts
++++ b/src/vs/workbench/browser/actions/windowActions.ts
+@@ -445,7 +445,7 @@ class NewWindowAction extends Action2 {
+ 	override run(accessor: ServicesAccessor): Promise<void> {
+ 		const hostService = accessor.get(IHostService);
+ 
+-		return hostService.openWindow({ remoteAuthority: null });
++		return hostService.openWindow({ remoteAuthority: null, vshoonStartWindow: true });
+ 	}
+ }
+ 

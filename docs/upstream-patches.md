@@ -20,6 +20,27 @@
 | VSH-0011 | `patches/VSH-0011-file-dialog-seam.patch` | 로컬 파일 선택 요청을 VShoon 전용 트리 모달로 위임 |
 | VSH-0012 | `patches/VSH-0012-os-file-drops.patch` | 선언한 bundled 웹뷰 뷰에 OS 파일 드롭 경로 전달 |
 | VSH-0013 | `patches/VSH-0013-native-file-drag.patch` | 로컬 파일을 OS 드래그로 내보내는 네이티브 seam |
+| VSH-0014 | `patches/VSH-0014-new-window-start.patch` | Workbench 새 창 요청을 콤팩트 시작 창으로 표시하는 표식 |
+
+## VSH-0014 — Start Window for the Workbench New Window Action
+
+- 목적: 기존 Workbench에서 **새 창**을 실행하면 빈 Workbench 대신 콤팩트 시작 창을 표시한다.
+- 수정한 upstream 파일: `src/vs/platform/window/common/window.ts`,
+  `src/vs/workbench/browser/actions/windowActions.ts`.
+- 수정 이유: Workbench의 새 창 명령은 두 번째 인스턴스의 `ILaunchMainService`를 거치지 않고
+  `IHostService.openWindow()`로 main process의 native-host 채널을 직접 호출한다. 다른 빈 창 흐름과
+  구분할 수 있도록 전용 boolean 표식 하나가 필요하다.
+- VShoon 소유 구현: `src/vs/vshoon/electron-main/nativeHostMainService.ts`가 native-host 서비스를
+  감싸 표식이 있는 요청만 시작 창 서비스로 넘긴다. `vshoon.startWindow.enabled=false`이면 원래
+  요청을 그대로 위임한다. 시작 창 서비스는 초기 실행과 보조 선택기를 구분해 보조 선택기를 닫아도
+  기존 Workbench를 종료하지 않는다.
+- 의존 symbol/service: `IHostService.openWindow`, `INativeHostMainService`,
+  `IVShoonStartWindowMainService`, `IConfigurationService`.
+- 충돌 위험도: 낮음. 옵션 타입에 선택 필드 하나를 추가하고 새 창 action의 호출 인자에만 표식을
+  붙인다. main-process 연결은 VSH-0002가 이미 소유한 `CodeApplication.initChannels` seam을 확장한다.
+- 테스트: 새 창 정책 단위 테스트, client typecheck, 계층 검사, 대상 ESLint, 개발 빌드에서
+  **새 창** 실행 후 시작 창 표시 및 닫아도 기존 Workbench가 유지되는지 확인.
+- 제거 가능 조건: upstream이 제품별 새 창 factory 또는 시작 창 기여점을 제공하는 경우.
 
 ## VSH-0013 — Native File Drag Out of Bundled Webview Views
 
@@ -133,7 +154,7 @@ What shipping it means:
 - 이유: 일반 확장은 Workbench가 생성된 뒤 활성화되므로 시작 창 수명주기를 제어할 수 없다.
 - 의존성: `CodeApplication.openFirstWindow`, `CodeApplication.initChannels`, `ILaunchMainService`, `IWindowsMainService`, `IWorkspacesHistoryMainService`, lifecycle 및 dialog 서비스.
 - 충돌 위험도: 정책 모듈은 낮음, `app.ts` seam은 높음.
-- 현재 seam: `app.ts`에서 세 곳만 수정한다. (1) `IVShoonStartWindowMainService` 등록, (2) `initChannels`에서 두 번째 인스턴스에 노출되는 `launch` 채널을 `VShoonLaunchMainService`로 감싸기, (3) `openFirstWindow`에서 설정을 포함한 정책 판정과 시작 창 수명주기 처리. 환경 인자 파일 두 곳에는 `--disable-start-window` 타입과 CLI 설명만 추가한다.
+- 현재 seam: `app.ts`에서 네 곳을 수정한다. (1) `IVShoonStartWindowMainService` 등록, (2) `initChannels`에서 두 번째 인스턴스에 노출되는 `launch` 채널을 `VShoonLaunchMainService`로 감싸기, (3) 같은 메서드에서 Workbench 새 창 표식을 처리하도록 `nativeHost` 채널을 감싸기, (4) `openFirstWindow`에서 설정을 포함한 정책 판정과 시작 창 수명주기 처리. 환경 인자 파일 두 곳에는 `--disable-start-window` 타입과 CLI 설명만 추가한다.
 - 설정: `extensions/vshoon-start`가 application scope의 `vshoon.startWindow.enabled`를 기여한다. main process가 기본 프로필 설정을 읽으므로 `false`이면 renderer를 만들기 전에 upstream Workbench 흐름으로 우회한다.
 - 두 번째 인스턴스: 시작 창이 실행을 소유하는 동안 대상 없는 요청은 시작 창을 포커스한다. 대상이 있는 요청은 upstream으로 위임하되 위임 **전에** 시작 창이 물러난다. `--wait` 요청의 `start()`는 편집이 끝나야 resolve되므로 결과를 기다리면 안 된다.
 - 검증: VShoon 단위 테스트 32개, 대상 ESLint, `valid-layers-check`, `typecheck-client`, 전체 client 및 built-in extension 빌드 통과. 격리된 Windows 데스크톱 실행에서 시작 창 표시, 두 번째 인스턴스 포커스, 폴더 인자 전달, `--disable-start-window`의 `disabledByCli` 우회, 사용자 설정 `false`의 `disabled` 우회를 확인했다. CLI 도움말에도 전용 옵션이 노출된다. `npm run smoke:start-window`는 실제 sandbox renderer의 접근성 이름, 초기 초점, 로딩 상태와 양방향 Tab 이동을 검사한 뒤 빈 Workbench를 열어 renderer 예외 없이 초기화되는지 확인한다.

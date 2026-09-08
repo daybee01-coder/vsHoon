@@ -16,9 +16,9 @@
 			"name": "VShoon: Start Window (desktop launch)",
 			"attachSimplePort": 5875,
 			"enableContentValidation": false,
-			"runtimeExecutable": "${workspaceFolder}/.core/.build/electron/VShoon.exe",
+			"runtimeExecutable": "${workspaceFolder}/.core/.build/electron/vs Hoon.exe",
 			"windows": {
-				"runtimeExecutable": "${workspaceFolder}/.core/.build/electron/VShoon.exe"
+				"runtimeExecutable": "${workspaceFolder}/.core/.build/electron/vs Hoon.exe"
 			},
 			"runtimeArgs": [
 				"${workspaceFolder}/.core",

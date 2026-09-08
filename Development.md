@@ -38,3 +38,20 @@
     또는 `IDataObject`를 구현하는 네이티브 애드온(비용 큼).
   - 우회로: 원격 → 로컬 패널로 끌어온 뒤 로컬 패널에서 탐색기로 끌어낸다.
 - seam 기록: [docs/upstream-patches.md](docs/upstream-patches.md)의 VSH-0012, VSH-0013
+
+
+## 7. 추가 개발 [x]
+ - [x] 새 창을 누르면 콤팩트 시작 창 표시
+ - [x] 프로그램 표시 이름을 `VShoon`에서 `vs Hoon`으로 변경
+
+## 8. 기능 개선
+ - 포터블과 설치 성능 차이 존재 유무
+ - 로딩, 반응 미묘하게 vscode와 비교하면 느림
+ - 전반적인 성능 개선 필요
+ - 불필요한 동작이 있는 확인 필요
+ - 개선점 바로 처리하지않고 가이드 작성 후 추후 진행할거니 가이드 파일 생성 후 작성
+ - [x] 조사 및 가이드 작성: [성능 개선 가이드](docs/performance-improvement-guide.md)
+ - [ ] 가이드 기반 성능 측정 및 개선 구현 (진행 중)
+   - [x] 1차: SQL 초안 중복 텍스트 조회 제거 및 단위 테스트 — [작업 기록](docs/performance-improvement-01.md)
+   - [x] 2차: 파일 선택창 조기 표시·요청 수명·행 리스너 정리 및 단위 테스트 — [작업 기록](docs/performance-improvement-02.md)
+   - [ ] 동일 배포판 기준 A/B 측정 및 나머지 개선 후보 검증

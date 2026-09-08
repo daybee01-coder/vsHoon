@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import {
   cacheKey,
@@ -7,6 +12,7 @@ import {
   type ScriptCacheEntry,
 } from './scriptIndex';
 import { log } from '../util/logger';
+import { readScriptSnapshot } from './scriptSnapshot';
 
 /**
  * 저장하지 않은 SQL 초안 캐시.
@@ -32,8 +38,6 @@ const PROMPTED_KEY = 'dbconn.scripts.promptedAt';
 const FOLDER = 'scripts';
 /** 저장 지연 — 타자마다 디스크에 쓰지 않도록. */
 const DEBOUNCE_MS = 1_000;
-/** 이보다 큰 문서는 캐시하지 않는다. 초안 복구용이지 백업이 아니다. */
-const MAX_CHARS = 1_000_000;
 
 export class ScriptCache implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[] = [];
@@ -67,23 +71,13 @@ export class ScriptCache implements vscode.Disposable {
     return vscode.workspace.getConfiguration('dbconn').get<boolean>('scripts.cache', true);
   }
 
-  private shouldCache(document: vscode.TextDocument): boolean {
-    if (!this.enabled() || document.languageId !== 'sql') {
-      return false;
-    }
-    if (document.uri.scheme !== 'untitled' && !document.isDirty) {
-      return false;
-    }
-    const length = document.getText().length;
-    return length > 0 && length <= MAX_CHARS;
-  }
-
   private schedule(document: vscode.TextDocument): void {
-    if (!this.shouldCache(document)) {
+    const text = readScriptSnapshot(document, this.enabled());
+    if (text === undefined) {
       return;
     }
     const uri = document.uri.toString();
-    this.lastText.set(uri, document.getText());
+    this.lastText.set(uri, text);
 
     const existing = this.timers.get(uri);
     if (existing) {

@@ -1,5 +1,5 @@
 diff --git a/product.json b/product.json
-index 47016c085d19..2a33dfe69e65 100644
+index 47016c085d19..9c7148f7502f 100644
 --- a/product.json
 +++ b/product.json
 @@ -1,39 +1,61 @@
@@ -10,11 +10,11 @@ index 47016c085d19..2a33dfe69e65 100644
 -	"dataFolderName": ".vscode-oss",
 -	"sharedDataFolderName": ".vscode-oss-shared",
 -	"win32MutexName": "vscodeoss",
-+	"nameShort": "VShoon",
-+	"nameLong": "VShoon",
-+	"companyName": "VShoon Contributors",
-+	"copyright": "Copyright (C) 2026 VShoon Contributors.",
-+	"win32PublisherName": "VShoon Contributors",
++	"nameShort": "vs Hoon",
++	"nameLong": "vs Hoon",
++	"companyName": "vs Hoon Contributors",
++	"copyright": "Copyright (C) 2026 vs Hoon Contributors.",
++	"win32PublisherName": "vs Hoon Contributors",
 +	"win32PublisherUrl": "https://github.com/daybee01-coder/vsHoon",
 +	"win32SetupBaseName": "VShoonSetup",
 +	"applicationName": "vshoon",
@@ -45,15 +45,15 @@ index 47016c085d19..2a33dfe69e65 100644
 +	"serverApplicationName": "vshoon-server",
 +	"serverDataFolderName": ".vshoon-server",
 +	"tunnelApplicationName": "vshoon-tunnel",
-+	"win32DirName": "VShoon",
-+	"win32NameVersion": "VShoon",
-+	"win32RegValueName": "VShoon",
++	"win32DirName": "vs Hoon",
++	"win32NameVersion": "vs Hoon",
++	"win32RegValueName": "vs Hoon",
 +	"win32x64AppId": "{{8669BE6B-65F4-4776-A399-627BEB9824F9}",
 +	"win32arm64AppId": "{{7B41CD32-7360-4F68-AC38-6E734EACD957}",
 +	"win32x64UserAppId": "{{52BA338F-53D9-4EB3-A1D6-19DC7368CC65}",
 +	"win32arm64UserAppId": "{{A403AF3C-D084-4EFD-A25C-53A061A94C98}",
 +	"win32AppUserModelId": "VShoon",
-+	"win32ShellNameShort": "&VShoon",
++	"win32ShellNameShort": "&vs Hoon",
 +	"win32TunnelServiceMutex": "vshoon-tunnel-service",
 +	"win32TunnelMutex": "vshoon-tunnel",
 +	"darwinBundleIdentifier": "io.vshoon.editor",

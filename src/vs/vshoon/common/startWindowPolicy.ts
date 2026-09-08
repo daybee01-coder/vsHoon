@@ -57,6 +57,10 @@ export type VShoonSecondInstanceDecision =
 	| { readonly focusStartWindow: true }
 	| { readonly focusStartWindow: false; readonly reason: VShoonSecondInstanceBypassReason };
 
+export type VShoonNewWindowDecision =
+	| { readonly show: true }
+	| { readonly show: false; readonly reason: 'disabled' | 'notRequested' };
+
 /**
  * Finds the first condition that forces a launch request onto the upstream path.
  * The order is part of the contract so that logs and tests stay stable.
@@ -142,4 +146,13 @@ export function evaluateVShoonSecondInstance(context: IVShoonSecondInstanceConte
 	const reason = findBypassReason(context);
 
 	return reason ? { focusStartWindow: false, reason } : { focusStartWindow: true };
+}
+
+/** Evaluates the explicit marker carried only by the Workbench's New Window action. */
+export function evaluateVShoonNewWindow(requested: boolean, enabled: boolean): VShoonNewWindowDecision {
+	if (!enabled) {
+		return { show: false, reason: 'disabled' };
+	}
+
+	return requested ? { show: true } : { show: false, reason: 'notRequested' };
 }

@@ -1,8 +1,8 @@
 diff --git a/src/vs/code/electron-main/app.ts b/src/vs/code/electron-main/app.ts
-index c9736ff355fa..44516e59151e 100644
+index c9736ff355fa..b7a5776d04b8 100644
 --- a/src/vs/code/electron-main/app.ts
 +++ b/src/vs/code/electron-main/app.ts
-@@ -147,6 +147,10 @@ import { NativeWebContentExtractorService } from '../../platform/webContentExtra
+@@ -147,6 +147,11 @@ import { NativeWebContentExtractorService } from '../../platform/webContentExtra
  import { AgentNetworkFilterService, IAgentNetworkFilterService } from '../../platform/networkFilter/common/networkFilterService.js';
  import { ITerminalSandboxService, NullTerminalSandboxService } from '../../platform/sandbox/common/terminalSandboxService.js';
  import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
@@ -10,10 +10,11 @@ index c9736ff355fa..44516e59151e 100644
 +import { toVShoonLaunchRequest } from '../../vshoon/node/launchRequest.js';
 +import { VShoonLaunchMainService } from '../../vshoon/electron-main/launchMainService.js';
 +import { IVShoonStartWindowMainService, VShoonStartWindowMainService } from '../../vshoon/electron-main/startWindowMainService.js';
++import { wrapVShoonNativeHostMainService } from '../../vshoon/electron-main/nativeHostMainService.js';
  
  type OSProxyConfigEvent = {
  	readonly success: boolean;
-@@ -1209,6 +1213,9 @@ export class CodeApplication extends Disposable {
+@@ -1209,6 +1214,9 @@ export class CodeApplication extends Disposable {
  		// Launch
  		services.set(ILaunchMainService, new SyncDescriptor(LaunchMainService, undefined, false /* proxied to other processes */));
  
@@ -23,7 +24,7 @@ index c9736ff355fa..44516e59151e 100644
  		// Diagnostics
  		services.set(IDiagnosticsMainService, new SyncDescriptor(DiagnosticsMainService, undefined, false /* proxied to other processes */));
  		services.set(IDiagnosticsService, ProxyChannel.toService(getDelayedChannel(sharedProcessReady.then(client => client.getChannel('diagnostics')))));
-@@ -1337,7 +1344,10 @@ export class CodeApplication extends Disposable {
+@@ -1337,7 +1345,10 @@ export class CodeApplication extends Disposable {
  
  		const disposables = this._register(new DisposableStore());
  
@@ -35,7 +36,22 @@ index c9736ff355fa..44516e59151e 100644
  		this.mainProcessNodeIpcServer.registerChannel('launch', launchChannel);
  
  		const diagnosticsChannel = ProxyChannel.fromService(accessor.get(IDiagnosticsMainService), disposables, { disableMarshalling: true });
-@@ -1485,6 +1495,28 @@ export class CodeApplication extends Disposable {
+@@ -1407,7 +1418,13 @@ export class CodeApplication extends Disposable {
+ 
+ 		// Native host (main & shared process)
+ 		this.nativeHostMainService = accessor.get(INativeHostMainService);
+-		const nativeHostChannel = ProxyChannel.fromService(this.nativeHostMainService, disposables, {
++		const nativeHostMainService = wrapVShoonNativeHostMainService(
++			this.nativeHostMainService,
++			accessor.get(IVShoonStartWindowMainService),
++			() => this.productService.applicationName === 'vshoon' && this.configurationService.getValue<boolean>(VSHOON_START_WINDOW_ENABLED_SETTING) !== false,
++			this.logService
++		);
++		const nativeHostChannel = ProxyChannel.fromService(nativeHostMainService, disposables, {
+ 			// This event has main-process consumers but no IPC consumer, so its buffer would never drain.
+ 			unbufferedEvents: ['onDidBlurMainWindow']
+ 		});
+@@ -1485,6 +1502,28 @@ export class CodeApplication extends Disposable {
  
  		const context = isLaunchedFromCli(process.env) ? OpenContext.CLI : OpenContext.DESKTOP;
  		const args = this.environmentMainService.args;
@@ -64,7 +80,7 @@ index c9736ff355fa..44516e59151e 100644
  
  		// Handle agents window first based on context
  		if (args['agents']) {
-@@ -1544,7 +1576,6 @@ export class CodeApplication extends Disposable {
+@@ -1544,7 +1583,6 @@ export class CodeApplication extends Disposable {
  			}
  		}
  

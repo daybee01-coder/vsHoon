@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
-import { evaluateVShoonSecondInstance, evaluateVShoonStartWindow, IVShoonLaunchRequest, IVShoonSecondInstanceContext, IVShoonStartWindowLaunchContext } from '../../common/startWindowPolicy.js';
+import { evaluateVShoonNewWindow, evaluateVShoonSecondInstance, evaluateVShoonStartWindow, IVShoonLaunchRequest, IVShoonSecondInstanceContext, IVShoonStartWindowLaunchContext } from '../../common/startWindowPolicy.js';
 
 const defaultRequest: IVShoonLaunchRequest = {
 	disableStartWindow: false,
@@ -111,6 +111,23 @@ suite('VShoon Second Instance Policy', () => {
 			bypassKeys.map(key => evaluateVShoonSecondInstance({ ...defaultContext, [key]: true })),
 			bypassReasons.map(reason => ({ focusStartWindow: false, reason }))
 		);
+	});
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+});
+
+suite('VShoon New Window Policy', () => {
+
+	test('shows the start window only for an enabled, marked request', () => {
+		assert.deepStrictEqual([
+			evaluateVShoonNewWindow(true, true),
+			evaluateVShoonNewWindow(true, false),
+			evaluateVShoonNewWindow(false, true)
+		], [
+			{ show: true },
+			{ show: false, reason: 'disabled' },
+			{ show: false, reason: 'notRequested' }
+		]);
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();

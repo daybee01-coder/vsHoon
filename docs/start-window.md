@@ -29,6 +29,11 @@ The launcher is eligible only for a desktop launch with no target and no special
 | Temporary or forced profile | Initially bypass; revisit with profile UI |
 | Start window disabled | Existing workbench path |
 
+The Workbench's **New Window** action is also eligible. It opens another compact start window
+instead of creating an empty Workbench, while explicit targets and specialized window flows keep
+their upstream behavior. Disabling `vshoon.startWindow.enabled` restores the ordinary empty-window
+behavior for this action as well.
+
 Session restoration needs an explicit product decision during implementation: the default proposal is to show the launcher for an icon/desktop launch and list restored workspaces as recent entries, while never intercepting explicit CLI targets.
 
 ## Single Instance Behavior
@@ -57,8 +62,13 @@ on the `launch` channel.
 | Extension development, test, or agents mode | Upstream path; start window steps down |
 | Start window no longer owns the launch | Unchanged upstream behavior |
 
-`--new-window` bypasses the start window on the initial launch for the same reason: it is an
-explicit request for an empty workbench window, so both entry points share one eligibility check.
+`--new-window` bypasses the start window on the initial launch because the CLI flag remains an
+explicit request for an empty Workbench window.
+
+The `--new-window` CLI flag and the Workbench's **New Window** action are separate paths. The CLI
+flag keeps the upstream behavior described above; the Workbench action carries a private typed
+marker through `IHostService.openWindow`, which the main-process native-host channel consumes.
+No other empty-window request is intercepted.
 
 Stepping down happens *before* the request is delegated. `ILaunchMainService.start()` does not
 settle until the opened window closes when the request carries `--wait`, so waiting for it would
@@ -147,7 +157,10 @@ workbench itself through `IWindowsMainService`, and closing it without choosing 
 
 ## Current Lifecycle Note
 
-`VShoon 열기` 동작은 시작 창을 먼저 숨긴다. 기존 `IWindowsMainService`가 Workbench `BrowserWindow`를 실제 생성한 뒤에만 시작 창과 IPC listener를 폐기한다. 유일한 창을 먼저 닫으면 Electron의 `window-all-closed` 처리로 앱이 종료될 수 있으므로 이 순서를 유지한다.
+`vs Hoon 열기` 동작은 시작 창을 먼저 숨긴다. 기존 `IWindowsMainService`가 Workbench `BrowserWindow`를 실제 생성한 뒤에만 시작 창과 IPC listener를 폐기한다. 유일한 창을 먼저 닫으면 Electron의 `window-all-closed` 처리로 앱이 종료될 수 있으므로 이 순서를 유지한다.
+
+초기 실행에서 열린 시작 창을 선택 없이 닫으면 애플리케이션을 종료한다. 기존 Workbench의
+**새 창** 동작으로 연 시작 창은 보조 선택기이므로 닫아도 기존 Workbench는 종료하지 않는다.
 
 두 번째 인스턴스가 시작 창을 밀어내는 경우에도 같은 순서를 따른다. `supersede()`는 창을 숨기고 소유권만 즉시 넘긴 뒤, 다른 창이 실제로 생길 때까지 기다렸다가 폐기한다.
 

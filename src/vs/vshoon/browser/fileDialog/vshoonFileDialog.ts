@@ -5,7 +5,7 @@
 
 import { addDisposableListener, EventType, getActiveDocument } from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
-import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { Schemas } from '../../../base/common/network.js';
 import * as resources from '../../../base/common/resources.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
@@ -16,13 +16,8 @@ import { INativeEnvironmentService } from '../../../platform/environment/common/
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILabelService } from '../../../platform/label/common/label.js';
 import { IQuickInputButton, IQuickInputService } from '../../../platform/quickinput/common/quickInput.js';
+import { FileDialogListing, IFileDialogNode } from '../../common/fileDialogListing.js';
 import './vshoonFileDialog.css';
-
-interface IFileDialogNode {
-	readonly uri: URI;
-	readonly name: string;
-	readonly isDirectory: boolean;
-}
 
 export class VShoonFileDialog extends Disposable {
 
@@ -84,22 +79,21 @@ export class VShoonFileDialog extends Disposable {
 		const closeButton: IQuickInputButton = { iconClass: ThemeIcon.asClassName(Codicon.close), tooltip: localize('vshoon.fileDialog.close', "Close") };
 		widget.buttons = [closeButton];
 
-		let current = options.defaultUri?.scheme === Schemas.file ? options.defaultUri : this.environmentService.userHome;
-		if (save && options.defaultUri?.scheme === Schemas.file) {
-			current = resources.dirname(options.defaultUri);
-		} else {
-			try {
-				if (!(await this.fileService.stat(current)).isDirectory) {
-					current = resources.dirname(current);
-				}
-			} catch {
-				current = this.environmentService.userHome;
-			}
-		}
+		// A save dialog already knows its folder. Everything else is the caller's guess until the
+		// file system confirms it, and that read happens after the dialog is on screen so a slow
+		// or unavailable folder cannot hold the whole dialog back.
+		const defaultFileUri = options.defaultUri?.scheme === Schemas.file ? options.defaultUri : undefined;
+		let current = save && defaultFileUri ? resources.dirname(defaultFileUri) : defaultFileUri ?? this.environmentService.userHome;
 		const history: URI[] = [current];
 		let historyIndex = 0;
 		let selected: IFileDialogNode | undefined;
 		let selectedRow: HTMLElement | undefined;
+
+		// Rows live for one folder. Their listeners belong to the render that made them, not to
+		// the dialog, so walking through folders does not pile them up until the dialog closes.
+		const rowListeners = store.add(new DisposableStore());
+		const folderEditor = store.add(new MutableDisposable<DisposableStore>());
+		const listing = new FileDialogListing(async uri => (await this.fileService.resolve(uri)).children ?? [], options.filters);
 
 		const iconButton = (icon: ThemeIcon, label: string, action: () => void | Promise<void>): HTMLButtonElement => {
 			const button = document.createElement('button');
@@ -134,13 +128,9 @@ export class VShoonFileDialog extends Disposable {
 		iconButton(Codicon.arrowUp, localize('vshoon.fileDialog.parent', "Parent Folder"), async () => navigate(resources.dirname(current)));
 		iconButton(Codicon.refresh, localize('vshoon.fileDialog.refresh', "Refresh"), async () => render());
 
-		const passesFilter = (node: IFileDialogNode): boolean => node.isDirectory || !options.filters?.length || options.filters.some(filter => filter.extensions.some(extension => extension === '*' || node.name.toLowerCase().endsWith(`.${extension.toLowerCase()}`)));
-		const readChildren = async (uri: URI): Promise<IFileDialogNode[]> => {
-			const stat = await this.fileService.resolve(uri);
-			return (stat.children ?? []).map(child => ({ uri: resources.joinPath(uri, child.name), name: child.name, isDirectory: child.isDirectory })).filter(passesFilter).sort((a, b) => a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1);
-		};
-
 		const createFolderEditor = (): void => {
+			const editorStore = new DisposableStore();
+			folderEditor.value = editorStore;
 			const editor = document.createElement('div');
 			editor.className = 'vshoon-file-dialog-new-folder';
 			const icon = document.createElement('span');
@@ -151,9 +141,11 @@ export class VShoonFileDialog extends Disposable {
 			editor.append(icon, input);
 			tree.prepend(editor);
 			input.focus();
-			store.add(addDisposableListener(input, EventType.KEY_DOWN, async event => {
+			editorStore.add(toDisposable(() => editor.remove()));
+			editorStore.add(addDisposableListener(input, EventType.KEY_DOWN, async event => {
 				if (event.key === 'Escape') {
-					editor.remove();
+					folderEditor.clear();
+					tree.focus();
 					return;
 				}
 				if (event.key !== 'Enter') { return; }
@@ -172,7 +164,7 @@ export class VShoonFileDialog extends Disposable {
 		};
 		iconButton(Codicon.newFolder, localize('vshoon.fileDialog.newFolder', "New Folder"), createFolderEditor);
 
-		const createRow = (node: IFileDialogNode, depth: number): HTMLDivElement => {
+		const createRow = (node: IFileDialogNode, depth: number, generation: number): HTMLDivElement => {
 			const branch = document.createElement('div');
 			const row = document.createElement('div');
 			row.className = 'vshoon-file-dialog-row';
@@ -188,26 +180,29 @@ export class VShoonFileDialog extends Disposable {
 			row.append(twistie, icon, label);
 			branch.append(row);
 			let expanded = false;
-			store.add(addDisposableListener(row, EventType.CLICK, async () => {
+			rowListeners.add(addDisposableListener(row, EventType.CLICK, async () => {
 				selectedRow?.classList.remove('selected');
 				row.classList.add('selected');
 				selectedRow = row;
 				selected = node;
 				pathInput.value = this.labelService.getUriLabel(node.uri);
-				if (node.isDirectory) {
-					expanded = !expanded;
-					twistie.className = ThemeIcon.asClassName(expanded ? Codicon.chevronDown : Codicon.chevronRight);
-					if (expanded && branch.childElementCount === 1) {
-						const children = document.createElement('div');
-						children.setAttribute('role', 'group');
-						try { (await readChildren(node.uri)).forEach(child => children.append(createRow(child, depth + 1))); } catch { /* unavailable */ }
-						branch.append(children);
-					} else if (branch.lastElementChild !== row) {
-						(branch.lastElementChild as HTMLElement).hidden = !expanded;
+				if (!node.isDirectory) { return; }
+				expanded = !expanded;
+				twistie.className = ThemeIcon.asClassName(expanded ? Codicon.chevronDown : Codicon.chevronRight);
+				if (expanded && branch.childElementCount === 1) {
+					const children = document.createElement('div');
+					children.setAttribute('role', 'group');
+					const outcome = await listing.listWithin(node.uri, generation);
+					if (outcome.kind === 'stale') { return; }
+					if (outcome.kind === 'listed') {
+						outcome.nodes.forEach(child => children.append(createRow(child, depth + 1, generation)));
 					}
+					branch.append(children);
+				} else if (branch.lastElementChild !== row) {
+					(branch.lastElementChild as HTMLElement).hidden = !expanded;
 				}
 			}));
-			store.add(addDisposableListener(row, EventType.DBLCLICK, () => node.isDirectory ? void navigate(node.uri) : complete(node.uri)));
+			rowListeners.add(addDisposableListener(row, EventType.DBLCLICK, () => node.isDirectory ? void navigate(node.uri) : complete(node.uri)));
 			return branch;
 		};
 
@@ -215,14 +210,20 @@ export class VShoonFileDialog extends Disposable {
 			back.disabled = historyIndex === 0;
 			forward.disabled = historyIndex + 1 >= history.length;
 			status.textContent = localize('vshoon.fileDialog.loading', "Loading…");
+			folderEditor.clear();
+			rowListeners.clear();
 			tree.replaceChildren();
-			try {
-				const nodes = await readChildren(current);
-				nodes.forEach(node => tree.append(createRow(node, 0)));
-				status.textContent = nodes.length ? '' : localize('vshoon.fileDialog.empty', "This folder is empty.");
-			} catch (error) {
-				status.textContent = error instanceof Error ? error.message : localize('vshoon.fileDialog.unavailable', "The folder cannot be opened.");
+			const outcome = await listing.list(current);
+			if (outcome.kind === 'stale') {
+				return;
 			}
+			if (outcome.kind === 'failed') {
+				status.textContent = outcome.error?.message ?? localize('vshoon.fileDialog.unavailable', "The folder cannot be opened.");
+				return;
+			}
+			const generation = listing.generation;
+			outcome.nodes.forEach(node => tree.append(createRow(node, 0, generation)));
+			status.textContent = outcome.nodes.length ? '' : localize('vshoon.fileDialog.empty', "This folder is empty.");
 		};
 
 		let settled = false;
@@ -231,6 +232,7 @@ export class VShoonFileDialog extends Disposable {
 		const complete = (uri?: URI): void => {
 			if (settled) { return; }
 			settled = true;
+			listing.cancel();
 			widget.hide();
 			resolveResult(uri ? (save ? uri : [uri]) : undefined);
 		};
@@ -252,10 +254,32 @@ export class VShoonFileDialog extends Disposable {
 			if (event.key === 'Escape') { complete(); }
 		}));
 
+		/** Corrects the starting folder once the file system answers, with the dialog already up. */
+		const resolveStart = async (): Promise<void> => {
+			if (save && defaultFileUri) {
+				return;
+			}
+			try {
+				if (!(await this.fileService.stat(current)).isDirectory) {
+					current = resources.dirname(current);
+				}
+			} catch {
+				current = this.environmentService.userHome;
+			}
+			history[0] = current;
+			pathInput.value = this.labelService.getUriLabel(suggestedName ? resources.joinPath(current, suggestedName) : current);
+		};
+
+		back.disabled = true;
+		forward.disabled = true;
+		status.textContent = localize('vshoon.fileDialog.loading', "Loading…");
 		pathInput.value = this.labelService.getUriLabel(suggestedName ? resources.joinPath(current, suggestedName) : current);
-		await render();
 		widget.show();
 		pathInput.focus();
+		await resolveStart();
+		if (!settled) {
+			await render();
+		}
 		const value = await result;
 		store.dispose();
 		return value;

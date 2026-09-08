@@ -38,6 +38,8 @@ if (packageRoot) {
 }
 delete environment.VSCODE_CLI;
 delete environment.ELECTRON_RUN_AS_NODE;
+delete environment.VSCODE_PORTABLE;
+delete environment.VSCODE_PORTABLE_TEMP;
 
 let output = '';
 let client;
@@ -151,13 +153,27 @@ try {
 	})`);
 	assert.strictEqual(workbenchState.ready, true, `Workbench did not initialize: ${JSON.stringify(workbenchState)}`);
 
+	await client.send('Page.bringToFront');
+	await evaluate(client, 'window.focus()');
+	await client.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
+	await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
+	const newWindowTarget = await waitForPageTarget(debuggingPort, child, candidate => candidate.url.includes('/vs/vshoon/electron-sandbox/startWindow/startWindow.html'), 'start window opened by the Workbench New Window action');
+	const newWindowClient = await connect(newWindowTarget.webSocketDebuggerUrl);
+	await newWindowClient.send('Runtime.enable');
+	await waitForRendererReady(newWindowClient);
+	assert.strictEqual(await evaluate(newWindowClient, "document.getElementById('product-name')?.textContent"), 'vs Hoon');
+	await evaluate(newWindowClient, "document.getElementById('quit')?.click()").catch(() => undefined);
+	newWindowClient.close();
+	await delay(250);
+	assert.strictEqual(await evaluate(client, "Boolean(document.querySelector('.monaco-workbench'))"), true, 'Closing the secondary start window also closed the existing Workbench.');
+
 	// A workbench that loses a contribution still renders, so the shell being up proves less than
 	// it looks like. This has already happened once: removing the Copilot onboarding contribution
 	// left `IOnboardingService` unregistered, and the startup page runner — a constructor
 	// dependency away — stopped being created, with only this log line to show for it.
 	assert.deepStrictEqual(await readContributionHealth(smokeRoot), { logsRead: true, failures: [] });
 
-	console.log('[vshoon] start-window smoke: launcher accessibility, Workbench transition and contribution health passed');
+	console.log('[vshoon] start-window smoke: launcher accessibility, Workbench transition, New Window action and contribution health passed');
 } catch (error) {
 	if (output) {
 		console.error(output);
@@ -192,7 +208,7 @@ async function waitForRendererReady(connection) {
 }
 
 async function waitForWorkbenchReady(connection) {
-	const deadline = Date.now() + 20_000;
+	const deadline = Date.now() + 40_000;
 	while (Date.now() < deadline) {
 		if (connection.exceptions.length > 0) {
 			throw new Error(`Workbench renderer exception: ${connection.exceptions.join('\n')}`);

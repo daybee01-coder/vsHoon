@@ -129,6 +129,8 @@ async function verifyModal(modal) {
 	const environment = { ...process.env, NODE_ENV: 'development', VSCODE_DEV: '1' };
 	delete environment.VSCODE_CLI;
 	delete environment.ELECTRON_RUN_AS_NODE;
+	delete environment.VSCODE_PORTABLE;
+	delete environment.VSCODE_PORTABLE_TEMP;
 
 	let output = '';
 	let client;
