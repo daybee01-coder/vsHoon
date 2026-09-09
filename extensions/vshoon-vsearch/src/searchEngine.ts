@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -5,6 +10,7 @@ import { Worker } from 'worker_threads';
 import { FileResult, MatchItem, SearchQuery } from './types';
 import { decodeText, escapeRegExp, isBinary } from './matcher';
 import { WorkerInput, WorkerMessage } from './searchWorker';
+import { collectDirtyTexts } from './dirtyTexts';
 
 export { buildMatcher, escapeRegExp, expandReplacement, findMatches, splitLines } from './matcher';
 
@@ -244,17 +250,6 @@ export function toFileResult(uri: vscode.Uri, matches: MatchItem[], truncated: b
   };
 }
 
-/** 저장하지 않은 편집 내용을 워커에 함께 넘겨, 디스크가 아닌 최신 내용을 검사하게 한다. */
-function collectDirtyTexts(): Record<string, string> {
-  const dirty: Record<string, string> = {};
-  for (const doc of vscode.workspace.textDocuments) {
-    if (doc.isDirty && doc.uri.scheme === 'file') {
-      dirty[doc.uri.fsPath] = doc.getText();
-    }
-  }
-  return dirty;
-}
-
 /**
  * 검색을 실행한다. 결과는 onBatch 로 나눠 전달되어 UI 가 즉시 반응할 수 있다.
  *
@@ -284,7 +279,7 @@ export async function runSearch(
 
   const input: WorkerInput = {
     paths,
-    dirty: collectDirtyTexts(),
+    dirty: collectDirtyTexts(paths, vscode.workspace.textDocuments),
     pattern: query.query,
     regex: query.regex,
     caseSensitive: query.caseSensitive,

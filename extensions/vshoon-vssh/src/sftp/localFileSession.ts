@@ -2,7 +2,20 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { AsyncSemaphore, LOCAL_SCAN_CONCURRENCY } from './asyncSemaphore';
 import { FileSession, FileStat, RemoteEntry } from './fileSession';
+
+/** `readdir`가 목록에 쓰는 항목. `fs.Dirent`가 그대로 만족한다. */
+type ScanDirent = Pick<fs.Dirent, 'name' | 'isDirectory' | 'isSymbolicLink'>;
+
+/** `readdir`가 항목 메타데이터로 쓰는 값. `fs.Stats`가 그대로 만족한다. */
+type ScanStats = Pick<fs.Stats, 'isDirectory' | 'isFile' | 'size' | 'mtimeMs' | 'mode'>;
+
+/** 목록 조회가 쓰는 파일 시스템 부분. 테스트에서 대체할 수 있게 좁게 정의한다. */
+export interface DirectoryScanner {
+  readdir(dirPath: string, options: { withFileTypes: true }): Promise<ScanDirent[]>;
+  stat(entryPath: string): Promise<ScanStats>;
+}
 
 /**
  * 파일질라식 왼쪽(로컬) 패널의 백엔드. Node fs를 FileSession 인터페이스에 맞춘다.
@@ -11,9 +24,23 @@ import { FileSession, FileStat, RemoteEntry } from './fileSession';
 export class LocalFileSession implements FileSession {
   readonly id = crypto.randomUUID();
   readonly label = '로컬';
+  private readonly scanSemaphore: AsyncSemaphore;
+
+  /**
+   * 항목 메타데이터 조회를 동시에 여는 수를 제한한다. 목록 순서와 각 항목의 값은 그대로다.
+   *
+   * @param scanner 목록 조회가 쓰는 파일 시스템. 기본값은 Node의 `fs.promises`다.
+   * @param scanConcurrency 동시에 실행할 `stat` 수.
+   */
+  constructor(
+    private readonly scanner: DirectoryScanner = fs.promises,
+    scanConcurrency: number = LOCAL_SCAN_CONCURRENCY
+  ) {
+    this.scanSemaphore = new AsyncSemaphore(scanConcurrency);
+  }
 
   async readdir(dirPath: string): Promise<RemoteEntry[]> {
-    const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const dirents = await this.scanner.readdir(dirPath, { withFileTypes: true });
     return Promise.all(
       dirents.map(async (d) => {
         const full = path.join(dirPath, d.name);
@@ -24,7 +51,7 @@ export class LocalFileSession implements FileSession {
         let mode: number | undefined;
         try {
           // 심링크는 대상 기준으로 표시한다 (깨진 링크면 catch로 넘어가 lstat 정보 유지).
-          const st = await fs.promises.stat(full);
+          const st = await this.scanSemaphore.run(() => this.scanner.stat(full));
           isDirectory = st.isDirectory();
           size = st.isFile() ? st.size : undefined;
           mtime = st.mtimeMs;

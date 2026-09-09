@@ -24,10 +24,13 @@
 		"test:dbconn": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-dbconn && node scripts/test-extension.mjs vshoon-dbconn",
 		"test:decom": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-decom",
 		"test:vsearch": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-vsearch && node scripts/test-extension.mjs vshoon-vsearch",
+		"test:vssh": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-vssh && node scripts/test-extension.mjs vshoon-vssh",
 		"test:scripts": "node --test scripts/test/*.test.mjs",
 		"smoke:start-window": "node scripts/smoke-start-window.mjs",
 		"smoke:ui-extension": "node scripts/smoke-ui-extension.mjs",
 		"smoke:modal-webviews": "node scripts/smoke-modal-webviews.mjs",
+		"smoke:file-dialog": "node scripts/smoke-file-dialog.mjs",
+		"test:file-dialog": "node scripts/core-exec.mjs run transpile-client && node scripts/core-exec.mjs run test-browser-no-install -- --browser chromium-msedge --runGlob **/vshoon/test/browser/fileDialog.test.js",
 		"watch": "node scripts/overlay.mjs --watch"
 	}
 }

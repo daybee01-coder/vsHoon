@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { queryFileName, uniqueFileName } from './queryFiles';
+import { collectQueryFiles } from './queryList';
 import { log } from '../util/logger';
 
 /**
@@ -173,7 +174,13 @@ export class QueryStore implements vscode.Disposable {
     return uri;
   }
 
-  /** 보관된 쿼리 목록. 최신 수정순. 폴더가 없으면 빈 목록. */
+  /**
+   * 보관된 쿼리 목록. 최신 수정순. 폴더가 없으면 빈 목록.
+   *
+   * 열거 결과에는 수정 시각이 없어 파일마다 `stat` 이 필요하다. 그 조회를
+   * 하나씩 순차로 기다리지 않도록 한도를 둔 동시 조회로 바꿨다 — 자세한 근거는
+   * `queryList.ts` 에 있다.
+   */
   async list(): Promise<SavedQuery[]> {
     const folder = this.folderUri();
     let entries: [string, vscode.FileType][];
@@ -183,20 +190,19 @@ export class QueryStore implements vscode.Disposable {
       return []; // 아직 아무것도 만들지 않았다.
     }
 
-    const files: SavedQuery[] = [];
-    for (const [name, type] of entries) {
-      if (type !== vscode.FileType.File || !name.toLowerCase().endsWith('.sql')) {
-        continue;
-      }
-      const uri = vscode.Uri.joinPath(folder, name);
-      try {
-        const stat = await vscode.workspace.fs.stat(uri);
-        files.push({ uri, name, modifiedAt: stat.mtime, size: stat.size });
-      } catch {
-        // 방금 지워졌을 수 있다 — 목록에서 빠지면 그만이다.
-      }
-    }
-    return files.sort((a, b) => b.modifiedAt - a.modifiedAt);
+    const files = await collectQueryFiles({
+      entries: async () => entries.map(([name, type]) => ({ name, isFile: type === vscode.FileType.File })),
+      stat: async (name) => {
+        const stat = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder, name));
+        return { modifiedAt: stat.mtime, size: stat.size };
+      },
+    });
+    return files.map(({ name, modifiedAt, size }) => ({
+      uri: vscode.Uri.joinPath(folder, name),
+      name,
+      modifiedAt,
+      size,
+    }));
   }
 
   async delete(uri: vscode.Uri): Promise<void> {

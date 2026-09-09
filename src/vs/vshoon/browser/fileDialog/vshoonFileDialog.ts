@@ -5,6 +5,7 @@
 
 import { addDisposableListener, EventType, getActiveDocument } from '../../../base/browser/dom.js';
 import { Codicon } from '../../../base/common/codicons.js';
+import { onUnexpectedError } from '../../../base/common/errors.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { Schemas } from '../../../base/common/network.js';
 import * as resources from '../../../base/common/resources.js';
@@ -207,6 +208,7 @@ export class VShoonFileDialog extends Disposable {
 		};
 
 		const render = async (): Promise<void> => {
+			if (settled) { return; }
 			back.disabled = historyIndex === 0;
 			forward.disabled = historyIndex + 1 >= history.length;
 			status.textContent = localize('vshoon.fileDialog.loading', "Loading…");
@@ -256,32 +258,38 @@ export class VShoonFileDialog extends Disposable {
 
 		/** Corrects the starting folder once the file system answers, with the dialog already up. */
 		const resolveStart = async (): Promise<void> => {
-			if (save && defaultFileUri) {
-				return;
-			}
-			try {
-				if (!(await this.fileService.stat(current)).isDirectory) {
-					current = resources.dirname(current);
+			const generation = listing.generation;
+			let start = current;
+			if (!(save && defaultFileUri)) {
+				try {
+					if (!(await this.fileService.stat(start)).isDirectory) {
+						start = resources.dirname(start);
+					}
+				} catch {
+					start = this.environmentService.userHome;
 				}
-			} catch {
-				current = this.environmentService.userHome;
 			}
+			// A navigation, refresh or close owns the UI now. Initial I/O must not take it back.
+			if (settled || generation !== listing.generation) { return; }
+			current = start;
 			history[0] = current;
 			pathInput.value = this.labelService.getUriLabel(suggestedName ? resources.joinPath(current, suggestedName) : current);
+			await render();
 		};
 
 		back.disabled = true;
 		forward.disabled = true;
 		status.textContent = localize('vshoon.fileDialog.loading', "Loading…");
 		pathInput.value = this.labelService.getUriLabel(suggestedName ? resources.joinPath(current, suggestedName) : current);
-		widget.show();
-		pathInput.focus();
-		await resolveStart();
-		if (!settled) {
-			await render();
+		try {
+			widget.show();
+			pathInput.focus();
+			// Resolve the user's choice independently of providers that may never answer.
+			void resolveStart().catch(onUnexpectedError);
+			return await result;
+		} finally {
+			listing.cancel();
+			store.dispose();
 		}
-		const value = await result;
-		store.dispose();
-		return value;
 	}
 }

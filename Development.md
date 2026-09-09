@@ -54,4 +54,7 @@
  - [ ] 가이드 기반 성능 측정 및 개선 구현 (진행 중)
    - [x] 1차: SQL 초안 중복 텍스트 조회 제거 및 단위 테스트 — [작업 기록](docs/performance-improvement-01.md)
    - [x] 2차: 파일 선택창 조기 표시·요청 수명·행 리스너 정리 및 단위 테스트 — [작업 기록](docs/performance-improvement-02.md)
+   - [x] 3차: VSearch 검색 범위 밖 미저장 문서 조회·전달 제거 — [작업 기록](docs/performance-improvement-03.md)
+   - [x] 4차: SFTP 로컬 패널 목록의 stat 동시성 제한 및 단위 테스트 — [작업 기록](docs/performance-improvement-04.md)
+   - [x] 5차: 쿼리 보관 목록의 순차 stat 제거 및 단위 테스트 — [작업 기록](docs/performance-improvement-05.md)
    - [ ] 동일 배포판 기준 A/B 측정 및 나머지 개선 후보 검증

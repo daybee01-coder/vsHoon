@@ -120,3 +120,32 @@ export class SerialQueue {
     return result;
   }
 }
+
+/**
+ * 배열의 각 항목에 비동기 작업을 적용하되 동시에 실행하는 수를 제한한다.
+ *
+ * 결과는 입력 순서대로 돌려주므로 호출부의 정렬 기준(동순위 유지 포함)이
+ * 실행 완료 순서에 흔들리지 않는다. 작업 하나가 reject 되면 반환 프라미스도
+ * reject 되지만 이미 시작한 다른 작업은 계속 진행하므로, 정리가 필요한
+ * 작업이라면 호출부가 각 작업 안에서 처리한다.
+ */
+export async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  if (items.length === 0) {
+    return results;
+  }
+  const slots = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 1;
+  const queue = items.map((item, index): [T, number] => [item, index]);
+  const worker = async (): Promise<void> => {
+    for (let job = queue.shift(); job; job = queue.shift()) {
+      const [item, index] = job;
+      results[index] = await task(item, index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(slots, items.length) }, worker));
+  return results;
+}

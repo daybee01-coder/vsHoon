@@ -9,6 +9,7 @@ import { connect } from '../ssh/connection';
 import { HostKeyStore } from '../ssh/hostKeyStore';
 import { SshFileSession } from '../ssh/sshFileSession';
 import { ActiveSessionManager } from './activeSessionManager';
+import { AsyncSemaphore } from './asyncSemaphore';
 import { FileSession, joinRemotePath } from './fileSession';
 import { LocalFileSession } from './localFileSession';
 import { SftpFileSystemProvider } from './sftpFileSystemProvider';
@@ -1434,35 +1435,4 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
 
 function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** 폴더 탐색 중 파일시스템/SFTP 요청이 한꺼번에 과도하게 발생하지 않도록 제한한다. */
-class AsyncSemaphore {
-  private active = 0;
-  private readonly waiters: Array<() => void> = [];
-
-  constructor(private readonly limit: number) {}
-
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    await this.acquire();
-    try {
-      return await task();
-    } finally {
-      this.release();
-    }
-  }
-
-  private acquire(): Promise<void> {
-    if (this.active < this.limit) {
-      this.active++;
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve) => this.waiters.push(resolve));
-  }
-
-  private release(): void {
-    const next = this.waiters.shift();
-    if (next) next(); // 현재 슬롯을 대기자에게 직접 넘긴다.
-    else this.active--;
-  }
 }

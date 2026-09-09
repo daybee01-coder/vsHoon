@@ -2,8 +2,8 @@
 
 작성일: 2026-09-08 · 대상: [Development.md](../Development.md)의 8번 기능 개선
 
-상태: **2차 구현 진행: P1-A 중복 스냅샷 조회 제거, P1-B 파일 선택창 표시 시점·요청 수명·행 리스너 정리. P0 배포판 A/B 측정은 여전히 미실시**.
-진행 내용과 검증 결과는 [1차 작업 기록](performance-improvement-01.md)과 [2차 작업 기록](performance-improvement-02.md)에 별도로 남긴다. 아래 정적 조사 내용은 변경 전 기준이다.
+상태: **5차 구현 진행: P1-A·P1-B·P2-A·P2-B에 이어 P2-D의 쿼리 보관 목록 순차 stat 제거. P0 배포판 A/B 측정은 여전히 미실시**.
+진행 내용과 검증 결과는 [1차 작업 기록](performance-improvement-01.md), [2차 작업 기록](performance-improvement-02.md), [3차 작업 기록](performance-improvement-03.md), [4차 작업 기록](performance-improvement-04.md), [5차 작업 기록](performance-improvement-05.md)에 별도로 남긴다. 아래 정적 조사 내용은 변경 전 기준이다.
 기준 코어는 [vshoon.lock.json](../vshoon.lock.json)의 Code - OSS `1.137.0`, 커밋 `6b606c6c85f184ce581f4d898e590a093e213ba3`이다. 현재 작업 트리의 7번 변경까지 포함해 조사했다. 기존 배포 파일에 같은 변경이 포함됐다고 가정하지 않는다.
 
 ## 1. 결론과 조사 범위
@@ -132,6 +132,7 @@ P0는 비교 전제, P1은 우선 재현·개선할 후보, P2는 관련 증상 
 
 ### P2-A — SFTP 로컬 목록의 무제한 stat와 설정 저장소 I/O
 
+- 진행: 세션 단위 세마포어로 동시 `stat` 수를 제한했다. 한도는 측정으로 정한 값이 아니며, 보이는 항목 우선 채우기와 탐색 취소는 남아 있다. [4차 작업 기록](performance-improvement-04.md) 참고.
 - 근거: [localFileSession.ts](../extensions/vshoon-vssh/src/sftp/localFileSession.ts)의 `readdir`는 모든 엔트리에 `stat`를 적용한 `Promise.all`을 만든다. **원격 SFTP 네트워크 요청의 동시성 문제로 확인한 것이 아니라 로컬 파일 시스템 조회 문제다.**
 - 후속 작업: 제한된 작업자 수로 작업을 생성하고 필요하다면 보이는 항목부터 메타데이터를 채운다. 느린/큰 폴더에서 동시 조회 수, 첫 목록 지연, 빠른 이동 후 불필요한 완료 처리를 비교한다. 제한 수는 측정으로 정한다.
 - 추가 근거: [sessionStorage.ts](../extensions/vshoon-vssh/src/sessions/sessionStorage.ts), [hostKeyStore.ts](../extensions/vshoon-vssh/src/ssh/hostKeyStore.ts)에 동기 읽기·mtime 확인·쓰기가 있다. 작은 파일의 저빈도 작업이면 영향이 작을 수 있다. 프로파일에 나타날 때만 캐시/비동기화 후보로 올린다.
@@ -156,6 +157,7 @@ P0는 비교 전제, P1은 우선 재현·개선할 후보, P2는 관련 증상 
 
 ### P2-D — 쿼리 이전/목록의 반복 조회
 
+- 진행: 목록의 파일별 `stat`을 순차 대기에서 한도 8의 동시 조회로 바꿨다. 한도는 측정으로 정한 값이 아니며, 이전(`migrateLegacy`)의 완료 표시·재시도 조건과 목록 캐시는 남아 있다. [5차 작업 기록](performance-improvement-05.md) 참고.
 - 근거: [queryStore.ts](../extensions/vshoon-dbconn/src/features/queryStore.ts)는 활성화 시 `migrateLegacy()`를 호출한다. 사용자 지정 폴더가 없는 경우 이전 SQL 폴더를 검사하고 대상과 비교하며, 완료 표시 없이 원본을 남긴다. `list()`는 각 SQL 파일을 순차 `stat`한다.
 - 후속 작업: SQL 파일이 많은 조건에서 활성화 및 목록 갱신을 측정한다. 완료 버전/재시도 조건을 가진 이전 상태, 제한된 병렬 메타데이터 조회, 명확한 무효화 조건이 있는 목록 캐시를 검토한다.
 - 검증: 일부 복사 실패 후 재시도, 중복 파일명·사용자 수정 파일 보존, 이후 원본 추가 정책, 보관 폴더 변경·외부 변경. 이전을 무조건 한 번만 수행하도록 막거나 원본을 삭제하지 않는다.
