@@ -2,8 +2,8 @@
 
 작성일: 2026-09-08 · 대상: [Development.md](../Development.md)의 8번 기능 개선
 
-상태: **5차 구현 진행: P1-A·P1-B·P2-A·P2-B에 이어 P2-D의 쿼리 보관 목록 순차 stat 제거. P0 배포판 A/B 측정은 여전히 미실시**.
-진행 내용과 검증 결과는 [1차 작업 기록](performance-improvement-01.md), [2차 작업 기록](performance-improvement-02.md), [3차 작업 기록](performance-improvement-03.md), [4차 작업 기록](performance-improvement-04.md), [5차 작업 기록](performance-improvement-05.md)에 별도로 남긴다. 아래 정적 조사 내용은 변경 전 기준이다.
+상태: **7차 구현 진행: P1-A·P1-B·P2-A·P2-B·P2-D에 이어 P1-C의 압축·해제를 워커 스레드로 격리하고 진행률·취소를 붙였다. P0 배포판 A/B 측정은 여전히 미실시**.
+진행 내용과 검증 결과는 [1차 작업 기록](performance-improvement-01.md), [2차 작업 기록](performance-improvement-02.md), [3차 작업 기록](performance-improvement-03.md), [4차 작업 기록](performance-improvement-04.md), [5차 작업 기록](performance-improvement-05.md), [6차 작업 기록](performance-improvement-06.md), [7차 작업 기록](performance-improvement-07.md)에 별도로 남긴다. 아래 정적 조사 내용은 변경 전 기준이다.
 기준 코어는 [vshoon.lock.json](../vshoon.lock.json)의 Code - OSS `1.137.0`, 커밋 `6b606c6c85f184ce581f4d898e590a093e213ba3`이다. 현재 작업 트리의 7번 변경까지 포함해 조사했다. 기존 배포 파일에 같은 변경이 포함됐다고 가정하지 않는다.
 
 ## 1. 결론과 조사 범위
@@ -125,10 +125,11 @@ P0는 비교 전제, P1은 우선 재현·개선할 후보, P2는 관련 증상 
 
 ### P1-C — JAR 작업의 확장 호스트 동기 점유
 
-- 근거: [zipUtil.ts](../extensions/vshoon-decom/src/zipUtil.ts)의 `openZip`은 JAR 전체를 `readFileSync`로 읽는다. `extractAllEntries`는 동기 압축 해제·디렉터리 생성·쓰기를 반복한다. `rebuildJarFromFolder`도 동기 탐색/읽기 후 `toBuffer()`와 동기 쓰기로 재구성한다.
+- 진행: 6차에서 데이터 보존 기준선(왕복 테스트, 임시 파일 교체, 항목 경로 경계)을 마련하고, 7차에서 압축·해제를 워커 스레드로 옮겨 진행률·취소를 붙였다. 합성 JAR 측정에서 호출한 쪽이 멈추는 시간이 추출 6.9~7.6초 → 36~178ms, 저장 2.2~2.3초 → 33~71ms로 줄었다. **메모리는 줄지 않았고**(워커로 옮겨졌을 뿐), 실제 확장 호스트에서 다른 확장의 응답 개선은 측정하지 않았다. [6차 작업 기록](performance-improvement-06.md), [7차 작업 기록](performance-improvement-07.md) 참고.
+- 근거: [zipUtil.ts](../extensions/vshoon-decom/src/zipUtil.ts)의 `openZip`은 JAR 전체를 `readFileSync`로 읽는다. `extractAllEntries`는 동기 압축 해제·디렉터리 생성·쓰기를 반복한다. `rebuildJarFromFolder`도 동기 탐색/읽기 후 `toBuffer()`와 동기 쓰기로 재구성한다. 이 동기 성질은 그대로이며, 도는 위치만 [jarWorker.ts](../extensions/vshoon-decom/src/jarWorker.ts)로 옮겼다.
 - 영향 가설: 큰 JAR을 처리하는 동안 같은 확장 호스트의 다른 기능 응답이 늦어지고, 압축/해제 버퍼로 최대 메모리가 증가할 수 있다. JAR을 사용하지 않는 시작/유휴 지연의 증거는 아니다.
-- 후속 작업: CPU 압축 작업을 worker/별도 프로세스로 격리하고, 파일 I/O 동시성과 메모리 사용량을 제한한다. `async` 선언만 추가하는 것으로 동기 압축 비용은 제거되지 않는다. 진행률·취소·오류 복구와 임시 결과의 안전한 교체를 함께 설계한다.
-- 검증: 다른 확장 명령 응답, 큰/손상된 JAR, 취소, 긴 Windows 경로, 중첩 JAR의 STORED 방식·디렉터리 엔트리 보존, 엔트리 경로 경계, 원본 복구. 현재 필요한 클래스만 디컴파일하는 동작은 유지한다.
+- 후속 작업: 실제 대형 JAR에서 열기/저장 시간과 최대 메모리를 재고, 확장 호스트에서 다른 확장 명령의 응답이 실제로 좋아졌는지 확인한다. 메모리를 낮추려면 `toBuffer()`를 대신할 스트리밍 압축을 검토한다 — 압축 라이브러리를 바꾸는 별도 작업이다. 파일 I/O 동시성 제한도 남아 있다.
+- 검증: 다른 확장 명령 응답, 큰/손상된 JAR, 취소, 긴 Windows 경로, 중첩 JAR의 STORED 방식·디렉터리 엔트리 보존, 엔트리 경로 경계, 원본 복구. 현재 필요한 클래스만 디컴파일하는 동작은 유지한다. 워커 실행 중 취소는 자동 테스트로 시점을 맞출 수 없어 수동 시나리오로 남는다.
 
 ### P2-A — SFTP 로컬 목록의 무제한 stat와 설정 저장소 I/O
 
@@ -182,7 +183,7 @@ P0는 비교 전제, P1은 우선 재현·개선할 후보, P2는 관련 증상 
 
 - 루트 스크립트로 관련 타입 검사/린트/단위 테스트 및 필요한 `npm run layers` 수행. 기존 실패와 새 실패를 구분하고, 기능 완료 전에 새 회귀를 해결한다.
 - 내장 확장은 루트 `npm run build` 또는 해당 확장 테스트 스크립트로 컴파일한다. `npm run lint`는 제품 코어 소스 범위이므로 내장 확장 린트까지 수행했다고 보고하지 않는다.
-- DBConn/VSearch는 각각 `npm run test:dbconn`, `npm run test:vsearch`를 사용한다. `npm run test:decom`은 현재 컴파일 명령뿐이므로 JAR 런타임 검증을 대체하지 않는다. VSsh 변경도 별도 관련 테스트/수동 시나리오가 필요하다.
+- DBConn/VSearch는 각각 `npm run test:dbconn`, `npm run test:vsearch`를 사용한다. `npm run test:decom`은 6차부터 컴파일과 단위 테스트를 함께 수행하고 7차부터 워커 경로도 실제로 띄워 확인하지만, 실제 JAR 열기·저장·디컴파일 런타임 검증을 대체하지는 않는다. VSsh 변경도 별도 관련 테스트/수동 시나리오가 필요하다.
 - 데스크톱 실행 전 `npm run build`. 시작 경로 변경 시 `npm run smoke:start-window`, UI 변경 시 관련 모달 smoke와 키보드/스크린 리더 확인. smoke는 기능 회귀용이며 성능 측정은 별도다.
 - 직접 Workbench 열기, 확장 호스트·디버깅·터미널·워크스페이스·프로필·Remote·CLI·접근성 기능을 보존한다. 변경 영역별 실제 실행 결과를 남긴다.
 - 패키징·원격 push·PR·릴리스는 이 가이드 작업 범위가 아니다.

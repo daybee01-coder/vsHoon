@@ -11,10 +11,14 @@
 			// scripts/code.bat sets VSCODE_CLI=1, which the start-window policy reads as a CLI
 			// launch and bypasses on purpose. Debugging the start window means launching the way
 			// a desktop user does: the Electron binary directly, with no VSCODE_CLI and no target.
+			//
+			// This half only runs the binary - `noDebug` keeps js-debug from managing an inspector
+			// of its own, which would collide with the `--inspect-brk=5875` below. The compound's
+			// "VShoon: Attach to Main Process" is what attaches and releases the breakpoint.
 			"type": "node",
 			"request": "launch",
-			"name": "VShoon: Start Window (desktop launch)",
-			"attachSimplePort": 5875,
+			"name": "VShoon: Start Window Internal",
+			"noDebug": true,
 			"enableContentValidation": false,
 			"runtimeExecutable": "${workspaceFolder}/.core/.build/electron/vs Hoon.exe",
 			"windows": {
@@ -38,15 +42,14 @@
 				"${workspaceFolder}/.core/extensions/vshoon-ui-sample/*": "${workspaceFolder}/extensions/vshoon-ui-sample/*"
 			},
 			"presentation": {
-				"group": "1_vshoon",
-				"order": 1
+				"hidden": true
 			}
 		},
 		{
 			"type": "node",
 			"request": "launch",
-			"name": "VShoon: Main Process",
-			"attachSimplePort": 5875,
+			"name": "VShoon: Main Process Internal",
+			"noDebug": true,
 			"enableContentValidation": false,
 			"runtimeExecutable": "${workspaceFolder}/.core/scripts/code.sh",
 			"windows": {
@@ -65,8 +68,7 @@
 				"${workspaceFolder}/.core/extensions/vshoon-ui-sample/*": "${workspaceFolder}/extensions/vshoon-ui-sample/*"
 			},
 			"presentation": {
-				"group": "1_vshoon",
-				"order": 2
+				"hidden": true
 			}
 		},
 		{
@@ -86,7 +88,7 @@
 			},
 			"presentation": {
 				"group": "1_vshoon",
-				"order": 3
+				"order": 1
 			}
 		},
 
@@ -186,6 +188,41 @@
 			"presentation": {
 				"group": "2_build",
 				"order": 4
+			}
+		}
+	],
+
+	// Debugging is split in two on purpose. `--inspect-brk=5875` halts Electron on its first line
+	// and only a debugger that attaches to that port releases it, so the launch half runs with
+	// `noDebug` and the attach half - `continueOnAttach` - is what resumes the process. This is the
+	// same shape upstream uses in .core/.vscode/launch.json, and it does not depend on
+	// `attachSimplePort`, which stopped releasing the process when the product name gained a space
+	// and the binary became `vs Hoon.exe`.
+	//
+	// `stopAll` ties the halves together so stopping the debugger also closes the window.
+	"compounds": [
+		{
+			"name": "VShoon: Start Window (desktop launch)",
+			"stopAll": true,
+			"configurations": [
+				"VShoon: Start Window Internal",
+				"VShoon: Attach to Main Process"
+			],
+			"presentation": {
+				"group": "0_vshoon",
+				"order": 1
+			}
+		},
+		{
+			"name": "VShoon: Main Process",
+			"stopAll": true,
+			"configurations": [
+				"VShoon: Main Process Internal",
+				"VShoon: Attach to Main Process"
+			],
+			"presentation": {
+				"group": "0_vshoon",
+				"order": 2
 			}
 		}
 	]

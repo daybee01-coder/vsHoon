@@ -57,4 +57,5 @@
    - [x] 3차: VSearch 검색 범위 밖 미저장 문서 조회·전달 제거 — [작업 기록](docs/performance-improvement-03.md)
    - [x] 4차: SFTP 로컬 패널 목록의 stat 동시성 제한 및 단위 테스트 — [작업 기록](docs/performance-improvement-04.md)
    - [x] 5차: 쿼리 보관 목록의 순차 stat 제거 및 단위 테스트 — [작업 기록](docs/performance-improvement-05.md)
+   - [x] 6차: JAR 작업의 데이터 보존 테스트 기준선 및 저장 결과 임시 파일 교체 — [작업 기록](docs/performance-improvement-06.md)
    - [ ] 동일 배포판 기준 A/B 측정 및 나머지 개선 후보 검증

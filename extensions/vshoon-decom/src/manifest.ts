@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { longPath } from './longpath';
+import { MANIFEST_DIRNAME } from './entryPaths';
 
-export const MANIFEST_DIRNAME = '.decom';
+export { MANIFEST_DIRNAME };
 export const MANIFEST_FILENAME = 'manifest.json';
 
 export interface DecomManifest {
@@ -13,6 +14,11 @@ export interface DecomManifest {
     jarSize: number;
     jarMtimeMs: number;
     backupPath: string | null;
+    /**
+     * 추출이 시작됐지만 끝나지 않았음을 뜻한다. 취소되거나 실패한 추출이 반쪽 캐시를 남겼을
+     * 때, 그 캐시가 원본과 같은 것으로 재사용되지 않게 하려고 둔다.
+     */
+    incomplete?: boolean;
 }
 
 export function hashPath(absolutePath: string): string {

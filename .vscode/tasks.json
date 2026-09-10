@@ -31,6 +31,7 @@
 				"vshoon: lint",
 				"vshoon: layers",
 				"vshoon: unit tests",
+				"vshoon: browser tests",
 				"vshoon: script tests"
 			],
 			"problemMatcher": []
@@ -138,6 +139,19 @@
 			"label": "vshoon: unit tests",
 			"type": "shell",
 			"command": "npm test",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		},
+		{
+			// The browser half of the unit tests. `vshoon: unit tests` runs the common and node
+			// layers under Node, which cannot load the CSS that browser sources import; these run
+			// in a real browser instead. Both halves are needed to cover src/vs/vshoon/test.
+			"label": "vshoon: browser tests",
+			"type": "shell",
+			"command": "npm run test:browser",
 			"problemMatcher": [],
 			"presentation": {
 				"reveal": "always",

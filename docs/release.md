@@ -32,7 +32,8 @@ npm run build                                       # compiles the client and th
 ```powershell
 npm run sync                                        # core at the pinned commit, patches applied
 npm run sync:check                                  # nothing has drifted apart
-npm test                                            # VShoon unit tests
+npm test                                            # VShoon unit tests (common and node layers)
+npm run test:browser                                # the browser layer, in a real browser
 npm run core -- run gulp vscode-win32-x64           # the application folder
 npm run smoke:start-window -- --package VSCode-win32-x64
 npm run core -- run gulp vscode-win32-x64-inno-updater   # installer tooling, branded
@@ -47,6 +48,7 @@ core 1.137.0 with Copilot shipped:
 | `npm run sync` | seconds, plus a fetch on the first run |
 | `npm run sync:check` | seconds |
 | `npm test` | about 2 minutes, most of it the transpile that `pretest` runs |
+| `npm run test:browser` | about 1 minute, most of it the transpile it runs first |
 | `npm run build` | about 3 minutes |
 | `npm run core -- run gulp vscode-win32-x64` | about 9 minutes |
 | `npm run smoke:start-window -- --package …` | about 1 minute |
@@ -55,8 +57,8 @@ A first build on a cold tree is much slower than that, and `npm run core -- inst
 run at least once — the wrapper says so rather than failing obscurely.
 
 The checks worth running before a package build, none of which needs a package: `npm run typecheck`,
-`npm run lint`, `npm run layers`, `npm test`, `npm run test:dbconn`, `npm run test:vsearch`,
-`npm run test:scripts`, `npm run smoke:start-window`, `npm run smoke:ui-extension` and
+`npm run lint`, `npm run layers`, `npm test`, `npm run test:browser`, `npm run test:dbconn`,
+`npm run test:decom`, `npm run test:vsearch`, `npm run test:vssh`, `npm run test:scripts`, `npm run smoke:start-window`, `npm run smoke:ui-extension` and
 `npm run smoke:modal-webviews`. The three smoke tests need `npm run build` first, because they
 drive the real application; `smoke:ui-extension` fails with a missing-module error if the built-in
 extensions were never compiled, and `smoke:modal-webviews` says so up front.
