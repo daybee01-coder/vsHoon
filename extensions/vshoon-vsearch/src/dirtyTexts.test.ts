@@ -80,6 +80,33 @@ describe('search dirty snapshots', () => {
 		assert.deepStrictEqual(after, before);
 		assert.deepStrictEqual(after.at(-1), { type: 'done', fileCount: 1, matchCount: 1, truncated: false });
 	});
+
+	it('searches virtual DeCom sources without exposing a cache file path', { timeout: 10_000 }, async () => {
+		const uri = 'vshoon-decom://source/App.java?class=test';
+		const messages = await runWorker({
+			paths: [uri],
+			dirty: {},
+			virtual: { [uri]: 'class App { int answer() { return 42; } }' },
+			pattern: 'answer',
+			regex: false,
+			caseSensitive: true,
+			wholeWord: true,
+			maxBytes: 1024,
+			maxMatchesPerFile: 100,
+			maxResultFiles: 100,
+		});
+		assert.deepStrictEqual(messages, [
+			{
+				type: 'batch',
+				files: [{
+					fsPath: uri,
+					matches: [{ line: 0, column: 16, length: 6, preview: 'class App { int answer() { return 42; } }', previewColumn: 16 }],
+					truncated: false,
+				}]
+			},
+			{ type: 'done', fileCount: 1, matchCount: 1, truncated: false }
+		]);
+	});
 });
 
 /** Runs the real worker without an editor or access to user documents. */

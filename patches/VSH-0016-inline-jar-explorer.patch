@@ -1,0 +1,202 @@
+diff --git a/src/vs/workbench/contrib/files/browser/views/explorerView.ts b/src/vs/workbench/contrib/files/browser/views/explorerView.ts
+index 3c8c088e3d74..315440463f7e 100644
+--- a/src/vs/workbench/contrib/files/browser/views/explorerView.ts
++++ b/src/vs/workbench/contrib/files/browser/views/explorerView.ts
+@@ -55,6 +55,7 @@ import { AbstractTreePart } from '../../../../../base/browser/ui/tree/abstractTr
+ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+ import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
+ import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
++import { isVShoonExpandableArchive } from '../../../../../vshoon/common/archiveExplorer.js';
+ 
+ 
+ function hasExpandedRootChild(tree: WorkbenchCompressibleAsyncDataTree<ExplorerItem | ExplorerItem[], ExplorerItem, FuzzyScore>, treeInput: ExplorerItem[]): boolean {
+@@ -563,7 +564,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
+ 			autoExpandSingleChildren: true,
+ 			expandOnlyOnTwistieClick: (e: unknown) => {
+ 				if (e instanceof ExplorerItem) {
+-					if (e.hasNests) {
++					if (e.hasNests || isVShoonExpandableArchive(e.resource)) {
+ 						return true;
+ 					}
+ 					else if (this.configurationService.getValue<'singleClick' | 'doubleClick'>('workbench.tree.expandMode') === 'doubleClick') {
+@@ -605,6 +606,12 @@ export class ExplorerView extends ViewPane implements IExplorerView {
+ 			// Check if the item was previously also selected, if yes the user is simply expanding / collapsing current selection #66589.
+ 			const shiftDown = DOM.isKeyboardEvent(e.browserEvent) && e.browserEvent.shiftKey;
+ 			if (!shiftDown) {
++				if (isVShoonExpandableArchive(element.resource)) {
++					if (DOM.isKeyboardEvent(e.browserEvent)) {
++						await this.tree.toggleCollapsed(element);
++					}
++					return;
++				}
+ 				if (element.isDirectory || this.explorerService.isEditable(undefined)) {
+ 					// Do not react if user is clicking on explorer items while some are being edited #70276
+ 					// Do not react if clicking on directories
+diff --git a/src/vs/workbench/contrib/files/browser/views/explorerViewer.ts b/src/vs/workbench/contrib/files/browser/views/explorerViewer.ts
+index 8178f4c4edc3..344b82230a61 100644
+--- a/src/vs/workbench/contrib/files/browser/views/explorerViewer.ts
++++ b/src/vs/workbench/contrib/files/browser/views/explorerViewer.ts
+@@ -74,6 +74,8 @@ import { IContextKey, IContextKeyService } from '../../../../../platform/context
+ import { CountBadge } from '../../../../../base/browser/ui/countBadge/countBadge.js';
+ import { listFilterMatchHighlight, listFilterMatchHighlightBorder } from '../../../../../platform/theme/common/colorRegistry.js';
+ import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
++import { ICommandService } from '../../../../../platform/commands/common/commands.js';
++import { isVShoonExpandableArchive, VSHOON_RESOLVE_ARCHIVE_EXPLORER_COMMAND } from '../../../../../vshoon/common/archiveExplorer.js';
+ 
+ export class ExplorerDelegate implements IListVirtualDelegate<ExplorerItem> {
+ 
+@@ -101,7 +103,8 @@ export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | Explo
+ 		@IFileService private readonly fileService: IFileService,
+ 		@IExplorerService private readonly explorerService: IExplorerService,
+ 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
+-		@IFilesConfigurationService private readonly filesConfigService: IFilesConfigurationService
++		@IFilesConfigurationService private readonly filesConfigService: IFilesConfigurationService,
++		@ICommandService private readonly commandService: ICommandService
+ 	) { }
+ 
+ 	getParent(element: ExplorerItem): ExplorerItem {
+@@ -114,7 +117,7 @@ export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | Explo
+ 
+ 	hasChildren(element: ExplorerItem | ExplorerItem[]): boolean {
+ 		// don't render nest parents as containing children when all the children are filtered out
+-		return Array.isArray(element) || element.hasChildren((stat) => this.fileFilter.filter(stat, TreeVisibility.Visible));
++		return Array.isArray(element) || isVShoonExpandableArchive(element.resource) || element.hasChildren(stat => this.fileFilter.filter(stat, TreeVisibility.Visible));
+ 	}
+ 
+ 	getChildren(element: ExplorerItem | ExplorerItem[]): ExplorerItem[] | Promise<ExplorerItem[]> {
+@@ -126,6 +129,18 @@ export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | Explo
+ 			return Array.from(element.children.values());
+ 		}
+ 
++		if (isVShoonExpandableArchive(element.resource)) {
++			const promise = this.resolveVShoonArchiveChildren(element).catch(error => {
++				this.notificationService.error(error);
++				return [];
++			});
++			this.progressService.withProgress({
++				location: ProgressLocation.Explorer,
++				delay: this.layoutService.isRestored() ? 800 : 1500
++			}, () => promise);
++			return promise;
++		}
++
+ 		const hasError = element.error;
+ 		const sortOrder = this.explorerService.sortOrderConfiguration.sortOrder;
+ 		const children = element.fetchChildren(sortOrder);
+@@ -167,6 +182,28 @@ export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | Explo
+ 
+ 		return promise;
+ 	}
++
++	private async resolveVShoonArchiveChildren(element: ExplorerItem): Promise<ExplorerItem[]> {
++		const result = await this.commandService.executeCommand<URI | undefined>(VSHOON_RESOLVE_ARCHIVE_EXPLORER_COMMAND, element.resource);
++		if (!result) {
++			return [];
++		}
++
++		const cacheRoot = URI.revive(result);
++		const stat = await this.fileService.resolve(cacheRoot, { resolveMetadata: false });
++		element.children.clear();
++		for (const rawChild of stat.children ?? []) {
++			if (rawChild.name === '.decom') {
++				continue;
++			}
++
++			const child = ExplorerItem.create(this.fileService, this.configService, this.filesConfigService, rawChild, undefined);
++			// A JAR is the visual parent, while the actual editable entry remains in Decom's cache.
++			element.addChildPreservingResource(child);
++		}
++
++		return Array.from(element.children.values()).filter(child => this.fileFilter.filter(child, TreeVisibility.Visible));
++	}
+ }
+ 
+ export class PhantomExplorerItem extends ExplorerItem {
+diff --git a/src/vs/workbench/contrib/files/common/explorerModel.ts b/src/vs/workbench/contrib/files/common/explorerModel.ts
+index ddba6b33bec3..19542e90eecc 100644
+--- a/src/vs/workbench/contrib/files/common/explorerModel.ts
++++ b/src/vs/workbench/contrib/files/common/explorerModel.ts
+@@ -14,7 +14,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
+ import { IDisposable, dispose } from '../../../../base/common/lifecycle.js';
+ import { memoize } from '../../../../base/common/decorators.js';
+ import { Emitter, Event } from '../../../../base/common/event.js';
+-import { joinPath, isEqualOrParent, basenameOrAuthority } from '../../../../base/common/resources.js';
++import { joinPath, isEqualOrParent, basenameOrAuthority, dirname } from '../../../../base/common/resources.js';
+ import { IFilesConfiguration, SortOrder } from './files.js';
+ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
+ import { ExplorerFileNestingTrie } from './explorerFileNestingTrie.js';
+@@ -90,6 +90,7 @@ export class ExplorerItem {
+ 	_isDirectoryResolved: boolean; // used in tests
+ 	public error: Error | undefined = undefined;
+ 	private _isExcluded = false;
++	private _resourceParent: URI | undefined;
+ 
+ 	public nestedParent: ExplorerItem | undefined;
+ 	public nestedChildren: ExplorerItem[] | undefined;
+@@ -300,11 +301,23 @@ export class ExplorerItem {
+ 	 */
+ 	addChild(child: ExplorerItem): void {
+ 		// Inherit some parent properties to child
++		if (child._parent !== this) {
++			child._resourceParent = undefined;
++		}
+ 		child._parent = this;
+ 		child.updateResource(false);
+ 		this.children.set(this.getPlatformAwareName(child.name), child);
+ 	}
+ 
++	/**
++	 * Adds a visual child while preserving a resource outside the parent's resource hierarchy.
++	 */
++	addChildPreservingResource(child: ExplorerItem): void {
++		child._parent = this;
++		child._resourceParent = dirname(child.resource);
++		this.children.set(this.getPlatformAwareName(child.name), child);
++	}
++
+ 	getChild(name: string): ExplorerItem | undefined {
+ 		return this.children.get(this.getPlatformAwareName(name));
+ 	}
+@@ -429,7 +442,7 @@ export class ExplorerItem {
+ 
+ 	private updateResource(recursive: boolean): void {
+ 		if (this._parent) {
+-			this.resource = joinPath(this._parent.resource, this.name);
++			this.resource = joinPath(this._resourceParent ?? this._parent.resource, this.name);
+ 		}
+ 
+ 		if (recursive) {
+diff --git a/src/vs/workbench/contrib/files/test/browser/explorerModel.test.ts b/src/vs/workbench/contrib/files/test/browser/explorerModel.test.ts
+index af65a4da6a6f..6959342de2ad 100644
+--- a/src/vs/workbench/contrib/files/test/browser/explorerModel.test.ts
++++ b/src/vs/workbench/contrib/files/test/browser/explorerModel.test.ts
+@@ -62,6 +62,29 @@ suite('Files - View Model', function () {
+ 		assert.strictEqual(child4.resource.fsPath, toResource.call(this, '/path/to/stat/' + child4.name).fsPath);
+ 	});
+ 
++	test('Preserve a visual child resource outside its parent hierarchy', function () {
++		const d = new Date().getTime();
++		const jar = createStat.call(this, '/workspace/sample.jar', 'sample.jar', false, false, 8096, d);
++		const archiveFolder = createStat.call(this, '/cache/sample/BOOT-INF', 'BOOT-INF', true, false, 8096, d);
++		const cacheResource = archiveFolder.resource;
++
++		jar.addChildPreservingResource(archiveFolder);
++		assert.strictEqual(archiveFolder.resource.fsPath, cacheResource.fsPath);
++
++		// A disk merge re-adds the item to its visual parent and must not turn the cache URI into sample.jar/BOOT-INF.
++		const diskFolder = createStat.call(this, '/cache/sample/BOOT-INF', 'BOOT-INF', true, false, 8096, d);
++		ExplorerItem.mergeLocalWithDisk(diskFolder, archiveFolder);
++		assert.strictEqual(archiveFolder.resource.fsPath, cacheResource.fsPath);
++
++		const nested = createStat.call(this, '/cache/sample/BOOT-INF/classes', 'classes', true, false, 8096, d);
++		archiveFolder.addChild(nested);
++		assert.strictEqual(nested.resource.fsPath, toResource.call(this, '/cache/sample/BOOT-INF/classes').fsPath);
++
++		const renamed = createStat.call(this, '/cache/sample/META-INF', 'META-INF', true, false, 8096, d);
++		archiveFolder.rename(renamed);
++		assert.strictEqual(archiveFolder.resource.fsPath, toResource.call(this, '/cache/sample/META-INF').fsPath);
++		assert.strictEqual(nested.resource.fsPath, toResource.call(this, '/cache/sample/META-INF/classes').fsPath);
++	});
+ 	test('Move', function () {
+ 		const d = new Date().getTime();
+ 

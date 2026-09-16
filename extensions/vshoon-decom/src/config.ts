@@ -5,6 +5,7 @@ export interface DecomConfig {
     javaExecutable: string;
     extraClasspath: string[];
     cfrExtraOptions: string;
+    confirmSave: boolean;
 }
 
 export function getConfig(): DecomConfig {
@@ -13,6 +14,7 @@ export function getConfig(): DecomConfig {
         cfrJarPath: cfg.get<string>('cfr.jarPath', '').trim(),
         javaExecutable: cfg.get<string>('java.executable', 'java').trim() || 'java',
         extraClasspath: cfg.get<string[]>('classpath.extra', []) ?? [],
-        cfrExtraOptions: cfg.get<string>('cfr.options', '').trim()
+        cfrExtraOptions: cfg.get<string>('cfr.options', '').trim(),
+        confirmSave: cfg.get<boolean>('save.confirm', true)
     };
 }

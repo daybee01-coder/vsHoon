@@ -63,8 +63,9 @@ export function writeSmokeSettings(profileRoot, settings) {
 `, 'utf8');
 }
 
-export async function waitForPageTarget(port, processHandle, predicate, description) {
-	const deadline = Date.now() + 30_000;
+export async function waitForPageTarget(port, processHandle, predicate, description, timeout = 30_000) {
+	const deadline = Date.now() + timeout;
+	let seen = [];
 	while (Date.now() < deadline) {
 		if (processHandle.exitCode !== null) {
 			throw new Error(`VShoon exited before the ${description} appeared (${processHandle.exitCode}).`);
@@ -73,6 +74,7 @@ export async function waitForPageTarget(port, processHandle, predicate, descript
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/json/list`);
 			const targets = await response.json();
+			seen = targets.filter(candidate => candidate.type === 'page').map(candidate => ({ title: candidate.title, url: candidate.url }));
 			const target = targets.find(candidate => candidate.type === 'page' && predicate(candidate));
 			if (target?.webSocketDebuggerUrl) {
 				return target;
@@ -84,7 +86,9 @@ export async function waitForPageTarget(port, processHandle, predicate, descript
 		await delay(100);
 	}
 
-	throw new Error(`Timed out waiting for the ${description}.`);
+	// Which windows *were* open is the whole diagnosis — "no window appeared" and "the window opened
+	// somewhere the predicate did not expect" fail identically without it.
+	throw new Error(`Timed out waiting for the ${description}. Open pages: ${JSON.stringify(seen)}`);
 }
 
 export function isWorkbenchTarget(candidate) {

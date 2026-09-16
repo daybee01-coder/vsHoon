@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -6,6 +11,7 @@ import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { getConfig } from './config';
 import { log } from './output';
+import { JarOperationCancelledError } from './jarWorkerProtocol';
 
 const CFR_VERSION = '0.152';
 const CFR_FILENAME = `cfr-${CFR_VERSION}.jar`;
@@ -49,8 +55,11 @@ function downloadFile(url: string, destPath: string, redirectsLeft = 5): Promise
                         return;
                     }
                     fs.rename(tmpPath, destPath, (renameErr) => {
-                        if (renameErr) reject(renameErr);
-                        else resolve();
+                        if (renameErr) {
+							reject(renameErr);
+						} else {
+							resolve();
+						}
                     });
                 });
             });
@@ -110,16 +119,21 @@ export interface RunResult {
     stderr: string;
 }
 
-async function runJava(context: vscode.ExtensionContext, cfrArgs: string[], token?: vscode.CancellationToken): Promise<RunResult> {
-    const cfg = getConfig();
-    // ensureCfrJar는 여기서 await하여, 실패 시 이 async 함수의 반환 Promise가 정상적으로 reject되도록 한다.
-    // (Promise executor 내부에서 await하면 예외가 executor의 반환값으로 흡수되어 바깥 Promise가 영원히 pending 상태로 남는다.)
-    const cfrJarPath = await ensureCfrJar(context);
+function preferredJavaExecutable(javaExecutable: string): string {
+    if (process.platform !== 'win32') {
+        return javaExecutable;
+    }
+    const extension = path.extname(javaExecutable);
+    const name = path.basename(javaExecutable, extension).toLowerCase();
+    return name === 'java' && (extension === '' || extension.toLowerCase() === '.exe')
+        ? path.join(path.dirname(javaExecutable), 'javaw.exe')
+        : javaExecutable;
+}
 
+function spawnJava(executable: string, args: string[], token?: vscode.CancellationToken): Promise<RunResult> {
     return new Promise((resolve, reject) => {
-        const args = ['-jar', cfrJarPath, ...cfrArgs];
-        log(`실행: ${cfg.javaExecutable} ${args.join(' ')}`);
-        const child = spawn(cfg.javaExecutable, args, { windowsHide: true });
+        log(`실행: ${executable} ${args.join(' ')}`);
+        const child = spawn(executable, args, { windowsHide: true });
 
         let stdout = '';
         let stderr = '';
@@ -136,25 +150,66 @@ async function runJava(context: vscode.ExtensionContext, cfrArgs: string[], toke
         });
         child.on('close', (code) => {
             cancelListener?.dispose();
+            if (token?.isCancellationRequested) {
+                reject(new JarOperationCancelledError());
+                return;
+            }
             resolve({ code, stdout, stderr });
         });
     });
+}
+
+async function runJava(context: vscode.ExtensionContext, cfrArgs: string[], token?: vscode.CancellationToken): Promise<RunResult> {
+    const cfg = getConfig();
+    // ensureCfrJar는 여기서 await하여, 실패 시 이 async 함수의 반환 Promise가 정상적으로 reject되도록 한다.
+    // (Promise executor 내부에서 await하면 예외가 executor의 반환값으로 흡수되어 바깥 Promise가 영원히 pending 상태로 남는다.)
+    const cfrJarPath = await ensureCfrJar(context);
+    if (token?.isCancellationRequested) {
+        throw new JarOperationCancelledError();
+    }
+
+    const args = ['-jar', cfrJarPath, ...cfrArgs];
+    const preferred = preferredJavaExecutable(cfg.javaExecutable);
+    try {
+        return await spawnJava(preferred, args, token);
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (preferred === cfg.javaExecutable || (code !== 'ENOENT' && code !== 'EACCES')) {
+            throw error;
+        }
+        log(`${preferred}를 찾을 수 없어 ${cfg.javaExecutable}(으)로 다시 실행합니다.`);
+        return spawnJava(cfg.javaExecutable, args, token);
+    }
 }
 
 /**
  * 단일 .class 파일을 디컴파일하여 소스 문자열을 반환한다. 같은 디렉터리에 내부/익명 클래스에
  * 해당하는 형제 .class 파일(예: Foo$1.class)이 함께 있으면 CFR이 자동으로 본문에 병합해준다.
  */
-export async function decompileSingleClass(context: vscode.ExtensionContext, classFilePath: string): Promise<string> {
+export async function decompileSingleClass(context: vscode.ExtensionContext, classFilePath: string, token?: vscode.CancellationToken): Promise<string> {
     const cfg = getConfig();
     const extraArgs = cfg.cfrExtraOptions ? cfg.cfrExtraOptions.split(/\s+/) : [];
     const args = [classFilePath, '--silent', 'true', ...extraArgs];
     if (cfg.extraClasspath.length > 0) {
         args.push('--extraclasspath', cfg.extraClasspath.join(path.delimiter));
     }
-    const result = await runJava(context, args);
+    const result = await runJava(context, args, token);
     if (result.code !== 0 || !result.stdout.trim()) {
         throw new Error(`CFR 디컴파일 실패 (exit ${result.code}):\n${result.stderr || result.stdout}`);
     }
     return result.stdout;
+}
+
+/** Decompiles every supported class in one archive with a single CFR/JVM invocation. */
+export async function decompileArchive(context: vscode.ExtensionContext, archivePath: string, outputDirectory: string, token?: vscode.CancellationToken): Promise<void> {
+    const cfg = getConfig();
+    const extraArgs = cfg.cfrExtraOptions ? cfg.cfrExtraOptions.split(/\s+/) : [];
+    const args = [archivePath, '--outputdir', outputDirectory, '--silent', 'true', ...extraArgs];
+    if (cfg.extraClasspath.length > 0) {
+        args.push('--extraclasspath', cfg.extraClasspath.join(path.delimiter));
+    }
+    const result = await runJava(context, args, token);
+    if (result.code !== 0) {
+        throw new Error(`CFR JAR 디컴파일 실패 (exit ${result.code}):\n${result.stderr || result.stdout}`);
+    }
 }

@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import { MatchItem, SearchQuery } from './types';
 import { EngineConfig, readTextFile, runSearch } from './searchEngine';
@@ -43,7 +48,7 @@ export async function loadPreview(
   }
   const matcher = contentMatcher(query);
   const matches = matcher ? findMatches(text, matcher, config.maxMatchesPerFile).matches : [];
-  return { content: text, matches, readonly: false };
+  return { content: text, matches, readonly: uri.scheme !== 'file' };
 }
 
 /**
@@ -53,6 +58,9 @@ export async function loadPreview(
  * 덮어쓰지 않고 예외를 던진다. (git checkout, 다른 편집기 등으로 인한 변경 손실 방지)
  */
 export async function savePreview(uri: vscode.Uri, content: string, baseText?: string): Promise<void> {
+  if (uri.scheme !== 'file') {
+    throw new Error('읽기 전용 JAR 소스는 수정할 수 없습니다.');
+  }
   const doc = await vscode.workspace.openTextDocument(uri);
   const current = doc.getText();
   if (baseText !== undefined && current !== baseText && current !== content) {
@@ -185,6 +193,9 @@ export async function replaceOne(
   position: { line: number; column: number },
   config: EngineConfig
 ): Promise<ReplaceResult> {
+  if (uri.scheme !== 'file') {
+    throw new Error('읽기 전용 JAR 소스는 바꿀 수 없습니다.');
+  }
   const matcher = contentMatcher(query);
   if (!matcher) {
     throw new Error('검색어를 입력해 주세요.');
@@ -218,7 +229,9 @@ export async function replaceAll(
   const uris: vscode.Uri[] = [];
   await runSearch(query, config, token, (files) => {
     for (const f of files) {
-      uris.push(vscode.Uri.parse(f.uri));
+      if (!f.readonly) {
+        uris.push(vscode.Uri.parse(f.uri));
+      }
     }
   });
 

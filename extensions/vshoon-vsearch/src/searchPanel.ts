@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import { getConfig, runSearch } from './searchEngine';
 import { loadPreview, recomputeMatches, replaceAll, replaceOne, savePreview } from './documentService';
@@ -245,7 +250,8 @@ export class SearchPanel {
         matchCount: stats.matchCount,
         elapsedMs: Date.now() - started,
         cancelled: source.token.isCancellationRequested,
-        truncated: stats.truncated
+        truncated: stats.truncated,
+        archivePending: stats.archivePending
       });
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -328,6 +334,7 @@ export class SearchPanel {
         <button id="btnPickFolder" class="ghost small" title="폴더 선택">…</button>
         <label class="check"><input type="checkbox" id="recursive" checked /> 하위 포함</label>
       </span>
+      <label class="check"><input type="checkbox" id="includeArchives" checked /> JAR 내부 포함</label>
     </div>
   </header>
 

@@ -19,6 +19,7 @@ import { IStateService } from '../../platform/state/node/state.js';
 import { ThemeTypeSelector } from '../../platform/theme/common/theme.js';
 import { IThemeMainService } from '../../platform/theme/electron-main/themeMainService.js';
 import { IWindowOpenable } from '../../platform/window/common/window.js';
+import { ICodeWindow } from '../../platform/window/electron-main/window.js';
 import { IWindowsMainService, OpenContext } from '../../platform/windows/electron-main/windows.js';
 import { isRecentFolder } from '../../platform/workspaces/common/workspaces.js';
 import { IWorkspacesHistoryMainService } from '../../platform/workspaces/electron-main/workspacesHistoryMainService.js';
@@ -358,6 +359,8 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		return this.openWindow(() => this.windowsMainService.open({
 			context: OpenContext.DESKTOP,
 			cli: this.environmentMainService.args,
+			forceNewWindow: true,
+			vshoonNewProjectWindow: true,
 			urisToOpen: [openable]
 		}));
 	}
@@ -369,14 +372,24 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 	 * closing it here would trigger Electron's window-all-closed lifecycle before the new window
 	 * exists. `releaseWhenWorkbenchOpens` disposes it once that window is there.
 	 */
-	private async openWindow(open: () => Promise<unknown>): Promise<IVShoonStartWindowResponse> {
+	private async openWindow(open: () => Promise<ICodeWindow[]>): Promise<IVShoonStartWindowResponse> {
+		if (this.state !== 'showing') {
+			return { opened: false };
+		}
 		this.state = 'released';
 		this.window?.hide();
-		this.releaseWhenWorkbenchOpens();
 
 		try {
-			await open();
+			const windows = await open();
+			if (windows.length === 0) {
+				this.state = 'showing';
+				this.focus();
+				return { opened: false };
+			}
+			this.releaseWhenWorkbenchOpens(windows);
 		} catch (error) {
+			this.state = 'showing';
+			this.focus();
 			this.logService.error('vshoon#startWindow: failed to open a window', error);
 
 			throw error;
@@ -434,21 +447,30 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		this.releaseWhenWorkbenchOpens();
 	}
 
-	private releaseWhenWorkbenchOpens(): void {
+	private releaseWhenWorkbenchOpens(expectedWindows?: readonly ICodeWindow[]): void {
 		if (this.releaseHandle) {
 			return;
 		}
 
 		const handle = this.releaseHandle = setInterval(() => {
-			if (BrowserWindow.getAllWindows().some(window => window !== this.window)) {
+			const windows = expectedWindows ?? this.windowsMainService.getWindows();
+			if (windows.some(window => window.isReady && window.win && !window.win.isDestroyed())) {
 				clearInterval(handle);
 				this.releaseHandle = undefined;
 				this.state = 'closed';
 				this.windowDisposables.clear();
+			} else if (expectedWindows?.every(window => !window.win || window.win.isDestroyed())) {
+				clearInterval(handle);
+				this.releaseHandle = undefined;
+				this.state = 'showing';
+				this.focus();
 			}
 		}, 50);
 
-		this._register(toDisposable(() => clearInterval(handle)));
+		this.windowDisposables.add(toDisposable(() => {
+			clearInterval(handle);
+			this.releaseHandle = undefined;
+		}));
 	}
 }
 

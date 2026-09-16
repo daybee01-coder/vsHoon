@@ -11,6 +11,7 @@ import {
     isMetaEntry,
     isNestedArchive,
     normalizeEntryName,
+    rebuildEntryRank,
     safeEntryTarget
 } from './entryPaths';
 import {
@@ -106,9 +107,8 @@ export function extractAllEntries(
 /**
  * cacheDir의 현재 상태(추가/수정/삭제 포함)로 jarPath를 완전히 다시 빌드한다. Decom의 내부
  * 메타 폴더(.decom, .vscode)는 제외한다. .jar/.war로 끝나는 항목(중첩 라이브러리 jar 등)은
- * 압축하지 않고 그대로 저장한다. (물리적인 zip 항목 순서는 adm-zip이 저장 시 자체 재정렬하므로
- * 보장되지 않지만, JVM/Spring Boot 등은 central directory로 항목을 찾기 때문에 순서는 동작에
- * 영향을 주지 않는다.)
+ * 압축하지 않고 그대로 저장한다. `META-INF/MANIFEST.MF`는 항상 맨 앞에 쓴다 —
+ * `rebuildEntryRank` 참고.
  *
  * 결과는 같은 폴더의 임시 파일에 먼저 쓰고 원본 자리로 옮긴다. 읽기·압축 중 오류가 나거나
  * 쓰기가 중간에 끊겨도 원본 jar가 반쯤 덮인 상태로 남지 않게 하려는 것이다. 취소도 같은
@@ -119,14 +119,19 @@ export function rebuildJarFromFolder(
     jarPath: string,
     options: JarOperationOptions = {}
 ): RebuildResult {
-    const zip = new AdmZip();
+    // adm-zip은 기본적으로 저장 시 항목을 이름순으로 다시 정렬한다. 그러면 `META-INF/`가
+    // 알파벳순으로 밀려 매니페스트가 맨 앞에 오지 못하므로, 정렬을 끄고 우리가 정한 순서를 쓴다.
+    const zip = new AdmZip(undefined, { noSort: true });
     let fileCount = 0;
 
+    // 항목 이름만 먼저 모아 둔다. 내용은 쓰는 단계에서 하나씩 읽으므로 메모리에 더 얹지 않으면서,
+    // 파일 시스템을 훑은 순서와 무관하게 매니페스트를 맨 앞에 놓을 수 있다.
+    const collected: { name: string; full: string; isDirectory: boolean }[] = [];
     const stack: string[] = [cacheDir];
     while (stack.length > 0) {
         const dir = stack.pop()!;
         for (const entry of fs.readdirSync(longPath(dir), { withFileTypes: true })) {
-            if (fileCount % PROGRESS_INTERVAL === 0) {
+            if (collected.length % PROGRESS_INTERVAL === 0) {
                 checkCancelled(options);
                 report(options, { phase: 'collect', done: fileCount, total: 0 });
             }
@@ -139,22 +144,38 @@ export function rebuildJarFromFolder(
                 // 빈 디렉터리뿐 아니라, Spring Boot 같은 로더가 "BOOT-INF/classes/" 같은
                 // 디렉터리 항목의 존재 자체로 nested archive 루트를 판별하는 경우가 있어
                 // 디렉터리 zip 항목을 반드시 함께 써야 한다 (누락 시 ClassNotFoundException).
-                zip.addFile(`${rel}/`, Buffer.alloc(0));
+                collected.push({ name: `${rel}/`, full, isDirectory: true });
                 stack.push(full);
                 continue;
             }
-            const data = fs.readFileSync(longPath(full));
-            const added = zip.addFile(rel, data);
-            try {
-                added.header.time = fs.statSync(longPath(full)).mtime;
-            } catch {
-                // 타임스탬프 설정 실패는 무시해도 무방 (내용/구조에는 영향 없음)
-            }
-            if (isNestedArchive(rel)) {
-                added.header.method = ZIP_METHOD_STORED;
-            }
-            fileCount++;
+            collected.push({ name: rel, full, isDirectory: false });
         }
+    }
+
+    const ordered = collected
+        .map((entry, index) => ({ entry, index }))
+        .sort((a, b) => rebuildEntryRank(a.entry.name) - rebuildEntryRank(b.entry.name) || a.index - b.index)
+        .map(({ entry }) => entry);
+
+    for (const entry of ordered) {
+        if (fileCount % PROGRESS_INTERVAL === 0) {
+            checkCancelled(options);
+            report(options, { phase: 'collect', done: fileCount, total: ordered.length });
+        }
+        if (entry.isDirectory) {
+            zip.addFile(entry.name, Buffer.alloc(0));
+            continue;
+        }
+        const added = zip.addFile(entry.name, fs.readFileSync(longPath(entry.full)));
+        try {
+            added.header.time = fs.statSync(longPath(entry.full)).mtime;
+        } catch {
+            // 타임스탬프 설정 실패는 무시해도 무방 (내용/구조에는 영향 없음)
+        }
+        if (isNestedArchive(entry.name)) {
+            added.header.method = ZIP_METHOD_STORED;
+        }
+        fileCount++;
     }
 
     checkCancelled(options);

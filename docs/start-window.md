@@ -34,6 +34,12 @@ instead of creating an empty Workbench, while explicit targets and specialized w
 their upstream behavior. Disabling `vshoon.startWindow.enabled` restores the ordinary empty-window
 behavior for this action as well.
 
+Selecting a folder, workspace or recent project in the launcher always creates a new Workbench,
+including another window for an already open project. Only this launcher request carries the
+internal `vshoonNewProjectWindow` option (VSH-0015); ordinary CLI and API deduplication is unchanged.
+The launcher waits for the selected window to become ready, and returns to selection if opening
+fails or produces no window.
+
 Session restoration needs an explicit product decision during implementation: the default proposal is to show the launcher for an icon/desktop launch and list restored workspaces as recent entries, while never intercepting explicit CLI targets.
 
 ## Single Instance Behavior

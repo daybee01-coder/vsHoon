@@ -22,6 +22,10 @@ export const VSCODE_DIRNAME = '.vscode';
  */
 export const ZIP_METHOD_STORED = 0;
 
+/** 실행 가능한 jar의 매니페스트 항목 이름. */
+export const JAR_MANIFEST_ENTRY = 'META-INF/MANIFEST.MF';
+const JAR_MANIFEST_DIR = 'META-INF/';
+
 const NESTED_ARCHIVE_RE = /\.(jar|war)$/i;
 
 /** zip 항목 이름은 `/`가 표준이지만 `\`로 쓰인 파일도 있어 한쪽으로 맞춘다. */
@@ -32,6 +36,22 @@ export function normalizeEntryName(entryName: string): string {
 /** 압축하지 않고 그대로 저장해야 하는 중첩 아카이브인지. */
 export function isNestedArchive(entryName: string): boolean {
     return NESTED_ARCHIVE_RE.test(entryName);
+}
+
+/**
+ * 다시 빌드할 때 항목을 쓸 순서. 작을수록 먼저 쓴다.
+ *
+ * `JarInputStream`은 central directory를 읽지 않고 앞에서부터 훑으며, `META-INF/MANIFEST.MF`가
+ * 맨 앞에 없으면 매니페스트가 없는 jar로 취급한다. Spring Boot 로더와 `jarsigner`, 각종 java
+ * agent가 그 경로를 쓰기 때문에, 파일 시스템을 훑은 순서대로 쓰면 `Main-Class`가 멀쩡히 남아
+ * 있는데도 매니페스트를 못 읽는 jar가 된다.
+ */
+export function rebuildEntryRank(entryName: string): number {
+    const normalized = normalizeEntryName(entryName);
+    if (normalized === JAR_MANIFEST_DIR) {
+        return 0;
+    }
+    return normalized === JAR_MANIFEST_ENTRY ? 1 : 2;
 }
 
 /** 캐시 폴더에만 있고 원본 JAR에는 없어야 하는 메타 경로인지. */

@@ -164,6 +164,8 @@ describe('rebuildJarFromFolder', () => {
 
         fs.mkdirSync(path.join(dest, '.decom'), { recursive: true });
         fs.writeFileSync(path.join(dest, '.decom', 'manifest.json'), '{}');
+        fs.mkdirSync(path.join(dest, '.decom', 'sources-test', 'com'), { recursive: true });
+        fs.writeFileSync(path.join(dest, '.decom', 'sources-test', 'com', 'App.java'), 'class App {}');
         fs.mkdirSync(path.join(dest, '.vscode'), { recursive: true });
         fs.writeFileSync(path.join(dest, '.vscode', 'settings.json'), '{}');
         fs.writeFileSync(path.join(dest, 'static', 'index.html'), 'edited', 'utf8');
@@ -195,6 +197,22 @@ describe('rebuildJarFromFolder', () => {
                 html: 'edited'
             }
         );
+    });
+
+    it('매니페스트를 맨 앞에 써서 스트리밍으로 읽는 쪽도 찾을 수 있다', () => {
+        const root = tempDir();
+        const jarPath = path.join(root, 'app.jar');
+        sampleJar(jarPath);
+        const dest = path.join(root, 'cache');
+        fs.mkdirSync(dest);
+        extractAllEntries(jarPath, dest);
+
+        rebuildJarFromFolder(dest, jarPath);
+
+        // `JarInputStream`은 central directory를 읽지 않고 앞에서부터 훑기 때문에, 물리적 순서가
+        // 그대로 "매니페스트가 있는 jar인가"를 결정한다.
+        const written = new AdmZip(fs.readFileSync(jarPath)).getEntries().map((entry) => entry.entryName);
+        assert.deepEqual(written.slice(0, 2), ['META-INF/', 'META-INF/MANIFEST.MF']);
     });
 
     it('저장이 실패하면 원본 jar가 그대로 남고 임시 파일도 남지 않는다', () => {

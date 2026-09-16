@@ -1,0 +1,13 @@
+{
+	"decom.jarExplorer.displayName": "Decom: Expand JAR in Explorer",
+	"decom.classViewer.displayName": "Decom: Decompiled Class (Read Only)",
+	"decom.openJar.title": "Decom: Expand JAR in Explorer",
+	"decom.viewClassFile.title": "Decom: View Decompiled Class (Read Only)",
+	"decom.refreshJar.title": "Decom: Refresh JAR Contents",
+	"vshoon.decom.clearCache.title": "Decom: Clear Decompiled Source Cache",
+	"vshoon.decom.cancelPrecompile.title": "Decom: Cancel Background Decompilation",
+	"vshoon.decom.precompileOnExpand.description": "Decompile classes in the background when a JAR is expanded.",
+	"vshoon.decom.precompileMaxClasses.description": "Maximum number of class families allowed for one background JAR decompilation batch.",
+	"vshoon.decom.cacheMaxSizeMb.description": "Maximum disk size in MB for the persistent decompiled source cache.",
+	"vshoon.decom.decompileTimeoutSec.description": "Seconds a decompiler run may make no progress before it is stopped. 0 disables the limit."
+}

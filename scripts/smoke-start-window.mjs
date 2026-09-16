@@ -5,10 +5,10 @@
 
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { connect, createSmokeProfile, delay, dispatchKey, evaluate, findFreePort, removeSmokeProfile, retainTail, waitForExit, waitForPageTarget } from './smoke-driver.mjs';
+import { connect, createSmokeProfile, delay, dispatchKey, evaluate, findFreePort, isWorkbenchTarget, removeSmokeProfile, retainTail, waitForExit, waitForPageTarget, writeSmokeSettings } from './smoke-driver.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const coreRoot = join(repoRoot, '.core');
@@ -27,6 +27,9 @@ if (!executable || !existsSync(executable)) {
 
 const smokePrefix = 'vshoon-start-window-smoke-';
 const smokeRoot = createSmokeProfile(smokePrefix);
+// `restoreWindows: none` keeps the second phase below from reopening the first phase's window: the
+// two phases share a profile, and a restored window would race the one the test actually asks for.
+writeSmokeSettings(smokeRoot, { 'window.openFoldersInNewWindow': 'off', 'security.workspace.trust.enabled': false, 'window.restoreWindows': 'none' });
 const debuggingPort = await findFreePort();
 const environment = { ...process.env };
 if (packageRoot) {
@@ -43,7 +46,9 @@ delete environment.VSCODE_PORTABLE_TEMP;
 
 let output = '';
 let client;
+let projectClient;
 let child;
+let second;
 
 try {
 	child = spawn(executable, [
@@ -153,6 +158,8 @@ try {
 	})`);
 	assert.strictEqual(workbenchState.ready, true, `Workbench did not initialize: ${JSON.stringify(workbenchState)}`);
 
+	// The Workbench "New Window" action shows the launcher instead of an empty window, and closing
+	// that launcher must not take the Workbench behind it with it.
 	await client.send('Page.bringToFront');
 	await evaluate(client, 'window.focus()');
 	await client.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
@@ -173,7 +180,60 @@ try {
 	// dependency away — stopped being created, with only this log line to show for it.
 	assert.deepStrictEqual(await readContributionHealth(smokeRoot), { logsRead: true, failures: [] });
 
-	console.log('[vshoon] start-window smoke: launcher accessibility, Workbench transition, New Window action and contribution health passed');
+	client.close();
+	client = undefined;
+	child.kill();
+	await waitForExit(child, 15_000).catch(() => undefined);
+
+	// Selecting a project in the launcher opens another window even when that project is already
+	// open (VSH-0015). This runs in its own instance opened directly on the folder rather than by
+	// handing the folder to the instance above: a development build's second-instance handoff is
+	// unreliable here — measured on this machine the first attempt produced no window at all in
+	// nearly every run — and it is upstream's path, not anything this test is about.
+	const projectPath = join(smokeRoot, 'sample-project');
+	mkdirSync(projectPath);
+	const projectPort = await findFreePort();
+	second = spawn(executable, [
+		...(packageRoot ? [] : [coreRoot]),
+		projectPath,
+		`--user-data-dir=${smokeRoot}`,
+		`--shared-data-dir=${join(smokeRoot, 'shared')}`,
+		`--remote-debugging-port=${projectPort}`,
+		'--locale=en'
+	], { cwd: packageRoot ?? coreRoot, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+	second.stdout.on('data', data => output = retainTail(output, data.toString()));
+	second.stderr.on('data', data => output = retainTail(output, data.toString()));
+
+	// An explicit target still opens the Workbench directly instead of the launcher.
+	const projectTarget = await waitForPageTarget(projectPort, second, isWorkbenchTarget, 'explicit project Workbench');
+	projectClient = await connect(projectTarget.webSocketDebuggerUrl);
+	await projectClient.send('Runtime.enable');
+	await waitForWorkbenchReady(projectClient);
+	assert.match(await evaluate(projectClient, 'document.title'), /sample-project/);
+
+	await projectClient.send('Page.bringToFront');
+	await evaluate(projectClient, 'window.focus()');
+	await projectClient.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
+	await projectClient.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
+	const chooserTarget = await waitForPageTarget(projectPort, second, candidate => candidate.url.includes('/startWindow/startWindow.html'), 'project chooser');
+	const chooser = await connect(chooserTarget.webSocketDebuggerUrl);
+	try {
+		await chooser.send('Runtime.enable');
+		await waitForRendererReady(chooser);
+		assert.strictEqual(await evaluate(chooser, "document.querySelectorAll('.recent-open').length"), 1);
+		await evaluate(chooser, "document.querySelector('.recent-open').click()");
+	} finally { chooser.close(); }
+
+	const duplicateTarget = await waitForPageTarget(projectPort, second, candidate => candidate.id !== projectTarget.id && isWorkbenchTarget(candidate), 'new window for the already open project');
+	const duplicate = await connect(duplicateTarget.webSocketDebuggerUrl);
+	try {
+		await duplicate.send('Runtime.enable');
+		await waitForWorkbenchReady(duplicate);
+		assert.match(await evaluate(duplicate, 'document.title'), /sample-project/);
+	} finally { duplicate.close(); }
+	assert.strictEqual(await evaluate(projectClient, "Boolean(document.querySelector('.monaco-workbench'))"), true, 'Project selection reused the window that already had the project.');
+
+	console.log('[vshoon] start-window smoke: accessibility, Workbench transition, New Window, contribution health, explicit-target bypass and duplicate-project selection passed');
 } catch (error) {
 	if (output) {
 		console.error(output);
@@ -182,9 +242,12 @@ try {
 	throw error;
 } finally {
 	client?.close();
-	if (child && child.exitCode === null) {
-		child.kill();
-		await waitForExit(child, 5_000).catch(() => undefined);
+	projectClient?.close();
+	for (const process of [second, child]) {
+		if (process && process.exitCode === null) {
+			process.kill();
+			await waitForExit(process, 5_000).catch(() => undefined);
+		}
 	}
 
 	try {
@@ -195,7 +258,9 @@ try {
 }
 
 async function waitForRendererReady(connection) {
-	const deadline = Date.now() + 10_000;
+	// The launcher fetches its recent-project model over IPC, which a loaded machine can leave pending
+	// for several seconds while other windows start.
+	const deadline = Date.now() + 30_000;
 	while (Date.now() < deadline) {
 		if (await evaluate(connection, "document.getElementById('recent-list')?.getAttribute('aria-busy') === 'false'")) {
 			return;
@@ -208,7 +273,9 @@ async function waitForRendererReady(connection) {
 }
 
 async function waitForWorkbenchReady(connection) {
-	const deadline = Date.now() + 40_000;
+	// A cold development-build start on a loaded machine takes tens of seconds before the Workbench
+	// renders, and the second phase starts one right after killing the first.
+	const deadline = Date.now() + 90_000;
 	while (Date.now() < deadline) {
 		if (connection.exceptions.length > 0) {
 			throw new Error(`Workbench renderer exception: ${connection.exceptions.join('\n')}`);
@@ -221,7 +288,9 @@ async function waitForWorkbenchReady(connection) {
 		await delay(50);
 	}
 
-	throw new Error('Timed out waiting for the Workbench to initialize.');
+	// A Workbench that never renders and one whose page never loaded fail the same way without this.
+	const page = await evaluate(connection, `({ readyState: document.readyState, title: document.title, url: location.href, body: document.body?.childElementCount })`).catch(error => String(error));
+	throw new Error(`Timed out waiting for the Workbench to initialize. Page: ${JSON.stringify(page)}`);
 }
 
 /**

@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 /**
  * 확장(Extension Host)과 웹뷰(Webview) 사이에서 주고받는 데이터 형식 정의.
  * 양쪽에서 동일한 형태를 사용하기 위해 이 파일 하나로 관리한다.
@@ -25,6 +30,8 @@ export interface SearchQuery {
   recursive: boolean;
   /** 파일 마스크 (예: "*.ts, *.java") */
   fileMask: string;
+  /** DeCom이 캐싱한 JAR 내부 클래스 소스를 포함할지 여부 */
+  includeArchives: boolean;
 }
 
 /** 한 줄에서 발견된 일치 항목 */
@@ -46,7 +53,7 @@ export interface FileResult {
   /** vscode.Uri.toString() 결과 */
   uri: string;
   /** OS 경로 */
-  fsPath: string;
+  fsPath?: string;
   /** 워크스페이스 기준 상대 경로 */
   relPath: string;
   /** 상대 경로의 디렉터리 부분 */
@@ -56,6 +63,8 @@ export interface FileResult {
   matches: MatchItem[];
   /** maxMatchesPerFile 로 잘렸는지 여부 */
   truncated: boolean;
+  /** 바꾸기를 허용하지 않는 가상 소스 */
+  readonly?: boolean;
 }
 
 /** 웹뷰 → 확장 메시지 */
@@ -86,6 +95,7 @@ export type ToWebviewMessage =
       elapsedMs: number;
       cancelled: boolean;
       truncated: boolean;
+      archivePending: number;
     }
   | { type: 'searchError'; id: number; message: string }
   | { type: 'preview'; uri: string; content: string; matches: MatchItem[]; readonly: boolean; message?: string }

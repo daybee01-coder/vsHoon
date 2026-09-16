@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 /**
  * 검색 매칭을 담당하는 워커 스레드.
  *
@@ -19,6 +24,8 @@ export interface WorkerInput {
   paths: string[];
   /** 저장하지 않은 편집 내용 (경로 → 텍스트). 디스크 대신 이 내용을 검사한다. */
   dirty: Record<string, string>;
+  /** 가상 문서 식별자 → 텍스트. DeCom 캐시는 경로를 노출하지 않고 이 맵으로 전달한다. */
+  virtual?: Record<string, string>;
   pattern: string;
   regex: boolean;
   caseSensitive: boolean;
@@ -39,7 +46,11 @@ export type WorkerMessage =
   | { type: 'done'; fileCount: number; matchCount: number; truncated: boolean }
   | { type: 'error'; message: string };
 
-function readForSearch(filePath: string, maxBytes: number, dirty: Record<string, string>): string | null {
+function readForSearch(filePath: string, maxBytes: number, dirty: Record<string, string>, virtual?: Record<string, string>): string | null {
+  const virtualText = virtual?.[filePath];
+  if (virtualText !== undefined) {
+    return Buffer.byteLength(virtualText) <= maxBytes ? virtualText : null;
+  }
   const cached = dirty[filePath];
   if (cached !== undefined) {
     return cached;
@@ -71,7 +82,7 @@ function run(input: WorkerInput): void {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    port.postMessage({ type: 'error', message: `정규식이 올바르지 않습니다: ${message}` } as WorkerMessage);
+    port.postMessage({ type: 'error', message: `정규식이 올바르지 않습니다: ${message}` });
     return;
   }
 
@@ -83,7 +94,7 @@ function run(input: WorkerInput): void {
 
   const flush = (force: boolean) => {
     if (buffer.length > 0 && (force || buffer.length >= 50 || Date.now() - lastFlush > 120)) {
-      port.postMessage({ type: 'batch', files: buffer } as WorkerMessage);
+      port.postMessage({ type: 'batch', files: buffer });
       buffer = [];
       lastFlush = Date.now();
     }
@@ -94,7 +105,7 @@ function run(input: WorkerInput): void {
       truncated = true;
       break;
     }
-    const text = readForSearch(filePath, input.maxBytes, input.dirty);
+    const text = readForSearch(filePath, input.maxBytes, input.dirty, input.virtual);
     if (text === null) {
       continue;
     }
@@ -111,7 +122,7 @@ function run(input: WorkerInput): void {
   }
 
   flush(true);
-  port.postMessage({ type: 'done', fileCount, matchCount, truncated } as WorkerMessage);
+  port.postMessage({ type: 'done', fileCount, matchCount, truncated });
 }
 
 if (parentPort && workerData) {

@@ -1,7 +1,7 @@
 {
   "name": "vshoon-decom",
   "displayName": "Decom - JAR/Class Decompiler",
-  "description": "JAR/Class 파일을 디컴파일하여 열람하고, JAR 내부 리소스/라이브러리를 수정한 뒤 다시 JAR에 저장할 수 있는 VSCode 확장",
+  "description": "JAR를 압축 해제하지 않고 Explorer에서 탐색하고 Class 파일을 읽기 전용으로 디컴파일하는 VShoon 내장 확장",
   "version": "0.1.0",
   "publisher": "vshoon",
   "private": true,
@@ -12,48 +12,67 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:decom.resolveExplorerJar"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "customEditors": [
       {
+        "viewType": "decom.jarExplorer",
+        "displayName": "%decom.jarExplorer.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.jar"
+          }
+        ],
+        "priority": "default"
+      },
+      {
         "viewType": "decom.classViewer",
-        "displayName": "Decom: 디컴파일된 Class (읽기 전용)",
-        "selector": [{ "filenamePattern": "*.class" }],
+        "displayName": "%decom.classViewer.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.class"
+          }
+        ],
         "priority": "default"
       }
     ],
     "commands": [
       {
         "command": "decom.openJar",
-        "title": "Decom: JAR 파일 열기 (디컴파일)",
+        "title": "%decom.openJar.title%",
         "icon": "$(package)"
       },
       {
         "command": "decom.viewClassFile",
-        "title": "Decom: Class 파일 디컴파일하여 보기 (읽기 전용)"
-      },
-      {
-        "command": "decom.saveToJar",
-        "title": "Decom: 변경사항을 JAR에 저장",
-        "icon": "$(save)"
+        "title": "%decom.viewClassFile.title%"
       },
       {
         "command": "decom.refreshJar",
-        "title": "Decom: JAR 다시 추출 (새로고침)"
+        "title": "%decom.refreshJar.title%"
       },
       {
-        "command": "decom.closeJar",
-        "title": "Decom: JAR 마운트 해제"
+        "command": "vshoon.decom.clearCache",
+        "title": "%vshoon.decom.clearCache.title%"
+      },
+      {
+        "command": "vshoon.decom.cancelPrecompile",
+        "title": "%vshoon.decom.cancelPrecompile.title%"
       }
     ],
     "menus": {
       "commandPalette": [
-        { "command": "decom.openJar" },
-        { "command": "decom.viewClassFile" },
-        { "command": "decom.saveToJar", "when": "decom.activeFolderMounted" },
-        { "command": "decom.refreshJar", "when": "decom.activeFolderMounted" },
-        { "command": "decom.closeJar", "when": "decom.activeFolderMounted" }
+        {
+          "command": "decom.openJar"
+        },
+        {
+          "command": "decom.viewClassFile"
+        },
+        {
+          "command": "decom.refreshJar"
+        }
       ],
       "explorer/context": [
         {
@@ -62,18 +81,8 @@
           "group": "decom@1"
         },
         {
-          "command": "decom.saveToJar",
-          "when": "explorerResourceIsRoot",
-          "group": "decom@2"
-        },
-        {
           "command": "decom.refreshJar",
-          "when": "explorerResourceIsRoot",
-          "group": "decom@2"
-        },
-        {
-          "command": "decom.closeJar",
-          "when": "explorerResourceIsRoot",
+          "when": "resourceExtname == .jar",
           "group": "decom@2"
         }
       ]
@@ -93,7 +102,9 @@
         },
         "decom.classpath.extra": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "디컴파일 시 CFR에 추가로 전달할 classpath 목록 (더 정확한 디컴파일을 위해 외부 참조 jar/디렉터리 지정)."
         },
@@ -101,6 +112,31 @@
           "type": "string",
           "default": "",
           "description": "CFR 실행 시 추가로 전달할 CLI 옵션 문자열 (예: \"--decodelambdas false\")."
+        },
+        "vshoon.decom.precompileOnExpand": {
+          "type": "boolean",
+          "default": true,
+          "description": "%vshoon.decom.precompileOnExpand.description%"
+        },
+        "vshoon.decom.precompileMaxClasses": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1,
+          "maximum": 250000,
+          "description": "%vshoon.decom.precompileMaxClasses.description%"
+        },
+        "vshoon.decom.cacheMaxSizeMb": {
+          "type": "number",
+          "default": 512,
+          "minimum": 16,
+          "description": "%vshoon.decom.cacheMaxSizeMb.description%"
+        },
+        "vshoon.decom.decompileTimeoutSec": {
+          "type": "number",
+          "default": 120,
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "%vshoon.decom.decompileTimeoutSec.description%"
         }
       }
     }

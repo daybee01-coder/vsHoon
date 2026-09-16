@@ -73,9 +73,12 @@ open/save/cancel actions. It uses Codicons and Workbench theme variables. Remote
 systems continue through upstream `SimpleFileDialog`. The manifest also defaults
 `workbench.iconTheme` to built-in `vs-seti`; a user's icon-theme choice still wins.
 
-`extensions/vshoon-decom` is a bundled extension overlay. It keeps the original custom editor and
-commands, while its `adm-zip` runtime dependency is supplied by the shared built-in-extension
-dependency tree pinned in `.core/extensions/package-lock.json`.
+`extensions/vshoon-decom` is a bundled extension overlay. Its read-only `vshoon-jar:` provider
+indexes archive entries without extracting the whole JAR. Classes are decompiled through a
+single-priority queue into a bounded persistent cache and exposed as read-only `vshoon-decom:` Java
+documents. VSearch consumes a versioned DeCom export API and never reads the cache directory or
+storage keys directly. The `adm-zip` runtime dependency for dormant rebuild code is supplied by the
+shared built-in-extension dependency tree pinned in `.core/extensions/package-lock.json`.
 
 ## Compatibility Strategy
 

@@ -11,6 +11,7 @@ import { FileResult, MatchItem, SearchQuery } from './types';
 import { decodeText, escapeRegExp, isBinary } from './matcher';
 import { WorkerInput, WorkerMessage } from './searchWorker';
 import { collectDirtyTexts } from './dirtyTexts';
+import { DecomCachedSource, getDecomSources } from './decomSearch';
 
 export { buildMatcher, escapeRegExp, expandReplacement, findMatches, splitLines } from './matcher';
 
@@ -24,6 +25,7 @@ export interface SearchStats {
   fileCount: number;
   matchCount: number;
   truncated: boolean;
+  archivePending: number;
 }
 
 export interface EngineConfig {
@@ -49,11 +51,9 @@ export function getConfig(): EngineConfig {
 
 /* ------------------------------------------------------------------ *
  * 파일 읽기
- * ------------------------------------------------------------------ *//* ------------------------------------------------------------------ *
- * 파일 읽기
  * ------------------------------------------------------------------ */
 
-/** 편집 중(저장되지 않은) 문서는 디스크 대신 메모리 내용을 사용한다. *//** 편집 중(저장되지 않은) 문서는 디스크 대신 메모리 내용을 사용한다. */
+/** 편집 중(저장되지 않은) 문서는 디스크 대신 메모리 내용을 사용한다. */
 function dirtyDocumentText(uri: vscode.Uri): string | undefined {
   const key = uri.toString();
   for (const doc of vscode.workspace.textDocuments) {
@@ -75,6 +75,11 @@ export async function readTextFile(uri: vscode.Uri, maxBytes: number): Promise<s
     return dirty;
   }
   try {
+    if (uri.scheme === 'vshoon-decom') {
+      const document = await vscode.workspace.openTextDocument(uri);
+      const text = document.getText();
+      return Buffer.byteLength(text) <= maxBytes ? text : null;
+    }
     if (uri.scheme === 'file') {
       const stat = await fs.promises.stat(uri.fsPath);
       if (!stat.isFile() || stat.size > maxBytes) {
@@ -250,6 +255,30 @@ export function toFileResult(uri: vscode.Uri, matches: MatchItem[], truncated: b
   };
 }
 
+function archiveFileResult(source: DecomCachedSource, matches: MatchItem[], truncated: boolean): FileResult {
+  const relPath = source.displayPath.replace(/\\/g, '/');
+  const slash = relPath.lastIndexOf('/');
+  return {
+    uri: source.uri,
+    relPath,
+    dir: slash >= 0 ? relPath.slice(0, slash) : '',
+    name: slash >= 0 ? relPath.slice(slash + 1).replace(/\.class$/i, '.java') : relPath.replace(/\.class$/i, '.java'),
+    matches,
+    truncated,
+    readonly: true
+  };
+}
+
+function archiveMatchesMask(source: DecomCachedSource, fileMask: string): boolean {
+  if (!fileMask.trim()) {
+    return true;
+  }
+  const fileName = source.displayPath.replace(/\\/g, '/').split('/').pop() ?? '';
+  const javaName = fileName.replace(/\.class$/i, '.java');
+  const matcher = maskToRegExp(fileMask);
+  return matcher.test(fileName) || matcher.test(javaName);
+}
+
 /**
  * 검색을 실행한다. 결과는 onBatch 로 나눠 전달되어 UI 가 즉시 반응할 수 있다.
  *
@@ -263,23 +292,33 @@ export async function runSearch(
   onBatch: (files: FileResult[]) => void
 ): Promise<SearchStats> {
   if (query.query.length === 0) {
-    return { fileCount: 0, matchCount: 0, truncated: false };
+    return { fileCount: 0, matchCount: 0, truncated: false, archivePending: 0 };
   }
 
-  const files = await collectFiles(query, config, token);
-  if (token.isCancellationRequested || files.length === 0) {
-    return { fileCount: 0, matchCount: 0, truncated: false };
+  const [files, decomResult] = await Promise.all([
+    collectFiles(query, config, token),
+    getDecomSources(query, config.maxFiles, config.maxFileSizeKb * 1024, token)
+  ]);
+  if (token.isCancellationRequested) {
+    return { fileCount: 0, matchCount: 0, truncated: decomResult.truncated, archivePending: decomResult.pending };
   }
 
   // 원격(file 스킴이 아닌) 파일은 워커의 node fs 로 읽을 수 없어 대상에서 뺀다.
   const paths = files.filter((uri) => uri.scheme === 'file').map((uri) => uri.fsPath);
+  const archiveSources = decomResult.sources
+    .filter(source => archiveMatchesMask(source, query.fileMask))
+    .slice(0, Math.max(0, config.maxFiles - paths.length));
+  const archiveByUri = new Map(archiveSources.map(source => [source.uri, source]));
+  const virtual = Object.fromEntries(archiveSources.map(source => [source.uri, source.content]));
+  paths.push(...archiveByUri.keys());
   if (paths.length === 0) {
-    return { fileCount: 0, matchCount: 0, truncated: false };
+    return { fileCount: 0, matchCount: 0, truncated: decomResult.truncated, archivePending: decomResult.pending };
   }
 
   const input: WorkerInput = {
     paths,
     dirty: collectDirtyTexts(paths, vscode.workspace.textDocuments),
+    virtual,
     pattern: query.query,
     regex: query.regex,
     caseSensitive: query.caseSensitive,
@@ -291,7 +330,12 @@ export async function runSearch(
 
   return new Promise<SearchStats>((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'searchWorker.js'), { workerData: input });
-    const stats: SearchStats = { fileCount: 0, matchCount: 0, truncated: false };
+    const stats: SearchStats = {
+      fileCount: 0,
+      matchCount: 0,
+      truncated: decomResult.truncated || archiveSources.length < decomResult.sources.length,
+      archivePending: decomResult.pending
+    };
     let settled = false;
 
     const finish = (fn: () => void) => {
@@ -323,16 +367,19 @@ export async function runSearch(
         return;
       }
       if (message.type === 'batch') {
-        const results = message.files.map((file) =>
-          toFileResult(vscode.Uri.file(file.fsPath), file.matches, file.truncated)
-        );
+        const results = message.files.map(file => {
+          const archive = archiveByUri.get(file.fsPath);
+          return archive
+            ? archiveFileResult(archive, file.matches, file.truncated)
+            : toFileResult(vscode.Uri.file(file.fsPath), file.matches, file.truncated);
+        });
         stats.fileCount += results.length;
         for (const file of results) {
           stats.matchCount += file.matches.length;
         }
         onBatch(results);
       } else if (message.type === 'done') {
-        stats.truncated = message.truncated;
+        stats.truncated = stats.truncated || message.truncated;
         finish(() => resolve(stats));
       } else if (message.type === 'error') {
         finish(() => reject(new Error(message.message)));

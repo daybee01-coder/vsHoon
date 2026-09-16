@@ -27,6 +27,7 @@
 		"test:vssh": "node scripts/core-exec.mjs run gulp compile-extension:vshoon-vssh && node scripts/test-extension.mjs vshoon-vssh",
 		"test:scripts": "node --test scripts/test/*.test.mjs",
 		"smoke:start-window": "node scripts/smoke-start-window.mjs",
+		"smoke:decom": "node scripts/smoke-decom.mjs",
 		"smoke:ui-extension": "node scripts/smoke-ui-extension.mjs",
 		"smoke:modal-webviews": "node scripts/smoke-modal-webviews.mjs",
 		"smoke:file-dialog": "node scripts/smoke-file-dialog.mjs",

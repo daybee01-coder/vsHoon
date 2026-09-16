@@ -21,6 +21,8 @@
 | VSH-0012 | `patches/VSH-0012-os-file-drops.patch` | 선언한 bundled 웹뷰 뷰에 OS 파일 드롭 경로 전달 |
 | VSH-0013 | `patches/VSH-0013-native-file-drag.patch` | 로컬 파일을 OS 드래그로 내보내는 네이티브 seam |
 | VSH-0014 | `patches/VSH-0014-new-window-start.patch` | Workbench 새 창 요청을 콤팩트 시작 창으로 표시하는 표식 |
+| VSH-0015 | `patches/VSH-0015-start-project-new-window.patch` | 시작 창에서 이미 열린 프로젝트도 별도 IDE 창으로 열기 |
+| VSH-0016 | `patches/VSH-0016-inline-jar-explorer.patch` | 기본 Explorer의 JAR 파일 노드 아래에 Decom 읽기 전용 VFS 내용 표시 |
 
 ## VSH-0014 — Start Window for the Workbench New Window Action
 
@@ -285,3 +287,25 @@ VShoon 모듈이 담당하고 화면 경계 제한은 upstream layout을 재사�
 - 주의: 번들러가 두 벌이다. `buildfile.ts`는 기존 gulp 번들러가, `build/next/index.ts`의 `codeEntryPoints`는 현재 패키징이 사용하는 esbuild 번들러가 읽는다. 한쪽만 등록하면 개발 실행은 정상인데 패키지에서만 renderer 번들이 빠진다.
 - 테스트: `vscode-win32-x64` 패키지 생성 후 `out/vs/vshoon/electron-sandbox/startWindow`의 JS/HTML/CSS/PNG 존재 확인 및 packaged start-window smoke test. smoke test는 제품 마크 이미지가 실제로 디코딩되는지도 확인하므로 CSP나 리소스 누락이 회귀하면 실패한다.
 - 제거 가능 조건: upstream bundler가 제품 overlay의 renderer entrypoint와 정적 파일을 선언적으로 수집할 수 있게 되는 경우.
+
+## VSH-0015 — 시작 창의 프로젝트를 새 IDE 창으로 열기
+
+- 목적: 시작 창에서 선택한 프로젝트가 기존 IDE 창을 재사용하지 않도록 한다. 같은 프로젝트가 열려 있어도 별도 창을 만든다.
+- upstream 파일: `src/vs/platform/windows/electron-main/windows.ts`, `src/vs/platform/windows/electron-main/windowsMainService.ts`.
+- 수정 이유: `forceNewWindow`만으로는 이미 열린 폴더/워크스페이스의 중복 제거를 우회할 수 없다. 제품 모듈에서 창을 직접 만들면 upstream 창 수명주기와 프로필 처리를 우회하게 된다.
+- 의존 symbol/service: `IOpenConfiguration`, `IWindowsMainService.open`, `findWindowOnWorkspaceOrFolder`.
+- 동작: `forceNewWindow`와 내부 옵션 `vshoonNewProjectWindow`가 모두 참일 때만 기존 프로젝트 창 검색을 건너뛴다. 옵션은 시작 창에서만 전달한다.
+- 충돌 위험도: 낮음. 선택 필드 하나와 폴더/워크스페이스의 기존 창 검색 조건 두 곳.
+- 테스트: `npm run smoke:start-window`에서 창 재사용 설정을 켠 상태로 이미 열린 프로젝트를 선택해 별도 Workbench가 생기는지 검사한다. CLI 직접 실행과 기존 빈 창 유지도 검사한다.
+
+## VSH-0016 — 기본 Explorer의 인라인 JAR 탐색
+
+- 목적: JAR를 워크스페이스 폴더로 마운트하지 않고 기존 Explorer 파일 노드 아래에서 바로 펼친다.
+- upstream 파일: `src/vs/workbench/contrib/files/browser/views/explorerView.ts`, `src/vs/workbench/contrib/files/browser/views/explorerViewer.ts`, `src/vs/workbench/contrib/files/common/explorerModel.ts`, `src/vs/workbench/contrib/files/test/browser/explorerModel.test.ts`.
+- 수정 이유: 일반 확장 API는 기본 Explorer의 파일 노드에 자식을 제공하거나 파일 열기를 트리 확장으로 바꿀 수 없다.
+- 의존 symbol/service: `ExplorerView`, `ExplorerDataSource`, `ExplorerItem`, `ICommandService`, `IFileService`.
+- 동작: 로컬 `.jar`와 JAR 내부의 가상 `.jar`에 twistie를 제공하고, 펼칠 때 bundled Decom의 `decom.resolveExplorerJar` 명령이 반환한 `vshoon-jar:` VFS 자식을 연결한다. JAR 열기는 편집기 대신 트리를 확장한다. 시각적 부모가 JAR여도 자식 모델의 실제 가상 URI는 보존한다.
+- 신뢰 경계: core는 VFS URI를 직접 만들거나 ZIP을 읽지 않는다. Decom이 항목명과 크기를 검증하고 등록한 읽기 전용 파일 시스템만 사용한다. 쓰기·이름 변경·삭제는 파일 시스템 제공자 단계에서 거부한다.
+- 충돌 위험도: 중간. Explorer 데이터 소스와 열기 이벤트에 작은 분기가 있고, 시각적 부모와 파일 URI를 분리하는 모델 seam이 있어 upstream 트리 모델 변경 시 재검증이 필요하다.
+- 테스트: 제품 공통 판정 단위 테스트, 실제 CFR·영속 캐시 재사용·오버로드 선언 이동을 포함한 Decom 32개 테스트, `npm run smoke:decom`에서 `BOOT-INF/classes`와 중첩 JAR 탐색, 읽기 전용 Java 문서와 줄 번호, 캐시 생성, 전체 압축 해제 없음, 원본 JAR 불변, 백업 미생성을 검사한다.
+- 제거 가능 조건: upstream이 기본 Explorer 파일 노드의 제한된 자식 공급자 API와 파일 열기 재정의 API를 제공하는 경우.
