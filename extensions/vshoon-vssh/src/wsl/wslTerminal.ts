@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as vscode from 'vscode';
+import { wslTerminalShellArgs } from './wslDirectoryTracking';
 
 const execFileAsync = promisify(execFile);
 
@@ -104,12 +105,12 @@ export async function getWslTerminalDirectory(terminal: vscode.Terminal, distro:
 
 /** SSH를 거치지 않고 wsl.exe를 직접 실행하는 로컬 터미널을 연다. */
 export function openWslTerminal(distro?: string): vscode.Terminal {
-  const shellArgs = distro ? ['-d', distro, '--cd', '/'] : ['--cd', '/'];
   const terminal = vscode.window.createTerminal({
     name: distro ? `WSL: ${distro}` : 'WSL',
     shellPath: 'wsl.exe',
-    shellArgs,
+    shellArgs: wslTerminalShellArgs(distro),
     location: vscode.TerminalLocation.Editor,
+    isTransient: true,
   });
   terminal.show();
   return terminal;

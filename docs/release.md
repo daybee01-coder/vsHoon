@@ -109,6 +109,21 @@ show: it bundles the renderer through a different entrypoint list and rewrites e
 call into a message-table index. Both of those have already broken the start window while
 `npm run smoke:start-window` against the development build stayed green.
 
+## Moving a portable folder
+
+VShoon sets its AppUserModelID (`win32AppUserModelId`) at startup, and Windows takes the taskbar
+icon for that ID from the Start Menu shortcut carrying it. A shortcut left pointing at a folder that
+was moved or deleted therefore leaves the taskbar button without an icon. After copying the
+application folder somewhere new, register it once:
+
+```powershell
+npm run portable:register -- -PortablePath 'D:\vs Hoon'
+```
+
+It rewrites `<Start Menu>\Programs\vs Hoon.lnk` for the folder, stamps the ID on it and removes
+other Start Menu shortcuts with the same ID whose target no longer exists. Windows opened before the
+script ran keep the old icon until they are reopened.
+
 ## Verifying before handing a build out
 
 - `VShoon.exe` carries the VShoon mark, and its version resource reads `VShoon` /

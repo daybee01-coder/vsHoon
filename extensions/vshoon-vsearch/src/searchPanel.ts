@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { getConfig, runSearch } from './searchEngine';
+import { SearchEngine, getConfig } from './searchEngine';
 import { loadPreview, recomputeMatches, replaceAll, replaceOne, savePreview } from './documentService';
 import { SearchQuery, ToExtensionMessage, ToWebviewMessage } from './types';
 
@@ -21,6 +21,7 @@ export class SearchPanel {
   private static current: SearchPanel | undefined;
 
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly engine = new SearchEngine();
   private searchTokenSource: vscode.CancellationTokenSource | undefined;
   private replaceTokenSource: vscode.CancellationTokenSource | undefined;
   private webviewReady = false;
@@ -103,6 +104,10 @@ export class SearchPanel {
             this.applyOptions(this.pendingOptions);
             this.pendingOptions = undefined;
           }
+          // 창은 항상 워크스페이스 범위로 시작하므로 첫 검색 전에 그 범위를 미리 읽어 둔다.
+          this.engine
+            .warm({ id: 0, query: '', regex: false, caseSensitive: false, wholeWord: false, scopeKind: 'workspace', scopePath: '', recursive: true, fileMask: '' }, getConfig())
+            .catch(() => undefined);
           break;
 
         case 'search':
@@ -199,6 +204,7 @@ export class SearchPanel {
             message.query,
             message.replacement,
             getConfig(),
+            this.engine,
             this.replaceTokenSource.token
           );
           this.post({ type: 'replaceDone', fileCount: result.fileCount, matchCount: result.matchCount });
@@ -238,7 +244,7 @@ export class SearchPanel {
     this.post({ type: 'searchStarted', id: query.id });
     const started = Date.now();
     try {
-      const stats = await runSearch(query, getConfig(), source.token, (files) => {
+      const stats = await this.engine.runSearch(query, getConfig(), source.token, (files) => {
         if (!source.token.isCancellationRequested) {
           this.post({ type: 'results', id: query.id, files });
         }
@@ -250,8 +256,7 @@ export class SearchPanel {
         matchCount: stats.matchCount,
         elapsedMs: Date.now() - started,
         cancelled: source.token.isCancellationRequested,
-        truncated: stats.truncated,
-        archivePending: stats.archivePending
+        truncated: stats.truncated
       });
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -334,7 +339,6 @@ export class SearchPanel {
         <button id="btnPickFolder" class="ghost small" title="폴더 선택">…</button>
         <label class="check"><input type="checkbox" id="recursive" checked /> 하위 포함</label>
       </span>
-      <label class="check"><input type="checkbox" id="includeArchives" checked /> JAR 내부 포함</label>
     </div>
   </header>
 
@@ -386,6 +390,7 @@ export class SearchPanel {
     this.searchTokenSource?.dispose();
     this.replaceTokenSource?.cancel();
     this.replaceTokenSource?.dispose();
+    this.engine.dispose();
     this.panel.dispose();
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();

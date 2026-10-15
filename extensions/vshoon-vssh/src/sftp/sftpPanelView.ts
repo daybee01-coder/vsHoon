@@ -12,6 +12,7 @@ import { ActiveSessionManager } from './activeSessionManager';
 import { AsyncSemaphore } from './asyncSemaphore';
 import { FileSession, joinRemotePath } from './fileSession';
 import { LocalFileSession } from './localFileSession';
+import { RemoteFileEditorManager } from './remoteFileEditor';
 import { SftpFileSystemProvider } from './sftpFileSystemProvider';
 import { cdTerminalToPath } from './sftpTerminalSync';
 import { TransferItem, TransferQueue } from './transferQueue';
@@ -26,7 +27,6 @@ interface InboundMessage {
   names?: string[];
   path?: string;
   intoDir?: string;
-  sync?: boolean;
   id?: string;
   paths?: string[];
 }
@@ -61,6 +61,8 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   private queueWasIdle = true;
   private readonly scanSemaphore = new AsyncSemaphore(8);
   private readonly createdRemoteDirs = new WeakMap<FileSession, Set<string>>();
+  private readonly remoteFileEditor: RemoteFileEditorManager;
+  private terminalFollowGeneration = 0;
   private seq = 0;
 
   constructor(
@@ -73,6 +75,8 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       this.context.globalState.get<string>(LOCAL_PATH_KEY) ||
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
       os.homedir();
+    this.remoteFileEditor = new RemoteFileEditorManager(() => this.listPane('remote'));
+    context.subscriptions.push(this.remoteFileEditor);
 
     this.transferStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
     this.transferStatusBar.name = 'VSsh 전체 전송 진행률';
@@ -114,6 +118,7 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     if (this.remoteSession) void this.initRemote();
     context.subscriptions.push(
       activeSessionManager.onDidChangeActive((session) => {
+        this.terminalFollowGeneration++;
         this.terminalSession = session;
         // 수동 사용자 변경(오버라이드)이 걸려 있으면 터미널 전환이 SFTP 패널을 덮어쓰지 않는다.
         if (this.userOverride) return;
@@ -154,14 +159,42 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     this.post({ type: 'toggleQueue' });
   }
 
-  /** 타이틀 바 동기 탐색 명령용. */
-  toggleSynchronizedNavigation(): void {
-    this.post({ type: 'toggleSync' });
-  }
-
   /** 터미널 위치 따라가기 명령용. */
   async navigateRemote(target: string): Promise<void> {
     await this.navigate('remote', target);
+  }
+
+  /** 활성 터미널이 보고한 경로를 조용히 검증한 뒤 원격 패널에 반영한다. */
+  async followTerminalDirectory(session: FileSession, target: string): Promise<void> {
+    const generation = ++this.terminalFollowGeneration;
+    if (
+      !path.posix.isAbsolute(target) ||
+      this.userOverride ||
+      this.terminalSession !== session ||
+      this.remoteSession !== session ||
+      target === this.remotePath
+    ) {
+      return;
+    }
+
+    let entries;
+    try {
+      entries = await session.readdir(target);
+    } catch {
+      return;
+    }
+    if (
+      generation !== this.terminalFollowGeneration ||
+      this.userOverride ||
+      this.terminalSession !== session ||
+      this.remoteSession !== session
+    ) {
+      return;
+    }
+
+    this.remotePath = target;
+    this.postState();
+    this.post({ type: 'list', pane: 'remote', path: target, entries });
   }
 
   // ---- 사용자 변경 (오버라이드) ------------------------------------------------
@@ -322,10 +355,10 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         if (msg.pane) await this.listPane(msg.pane);
         break;
       case 'up':
-        if (msg.pane) await this.enter(msg.pane, '..', msg.sync);
+        if (msg.pane) await this.enter(msg.pane, '..');
         break;
       case 'enter':
-        if (msg.pane && msg.name !== undefined) await this.enter(msg.pane, msg.name, msg.sync);
+        if (msg.pane && msg.name !== undefined) await this.enter(msg.pane, msg.name);
         break;
       case 'navigate':
         if (msg.pane && msg.path) await this.navigate(msg.pane, msg.path);
@@ -359,6 +392,9 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         break;
       case 'pickLocalFolder':
         await this.pickLocalFolder();
+        break;
+      case 'openLocalExplorer':
+        await this.openLocalExplorer();
         break;
       case 'queueCancel':
         this.queue.cancelAll();
@@ -402,15 +438,20 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   }
 
   private async initializeRemoteSession(session: FileSession): Promise<void> {
+    const generation = this.terminalFollowGeneration;
+    let initialPath: string;
     try {
-      this.remotePath = await session.realpath('.');
+      initialPath = await session.realpath('.');
     } catch {
-      this.remotePath = '/';
+      initialPath = '/';
     }
 
-    // 조회 중 활성 터미널이 바뀌었다면 이전 세션의 결과를 새 화면에 표시하지 않는다.
-    if (this.remoteSession !== session) return;
+    // 조회 중 활성 터미널/경로가 바뀌었다면 이전 초기 경로로 새 화면을 덮지 않는다.
+    if (this.remoteSession !== session || generation !== this.terminalFollowGeneration) {
+      return;
+    }
 
+    this.remotePath = initialPath;
     this.postState();
     await this.listPane('remote');
   }
@@ -437,19 +478,10 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     }
   }
 
-  private async enter(pane: Pane, name: string, sync?: boolean): Promise<void> {
-    await this.doEnter(pane, name);
-    if (sync) {
-      const other: Pane = pane === 'local' ? 'remote' : 'local';
-      try {
-        await this.doEnter(other, name, true);
-      } catch {
-        // 반대쪽에 같은 하위 폴더가 없으면 그쪽은 그대로 둔다.
-      }
+  private async enter(pane: Pane, name: string): Promise<void> {
+    if (pane === 'remote') {
+      this.terminalFollowGeneration++;
     }
-  }
-
-  private async doEnter(pane: Pane, name: string, verify?: boolean): Promise<void> {
     const nextPath =
       pane === 'local'
         ? name === '..'
@@ -458,12 +490,6 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         : name === '..'
           ? path.posix.dirname(this.remotePath)
           : joinRemotePath(this.remotePath, name);
-
-    if (verify) {
-      const session = pane === 'local' ? this.localSession : this.remoteSession;
-      if (!session) throw new Error('세션 없음');
-      await session.readdir(nextPath); // 없으면 throw → 호출부에서 무시
-    }
 
     if (pane === 'local') {
       this.localPath = nextPath;
@@ -476,6 +502,9 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   }
 
   private async navigate(pane: Pane, target: string): Promise<void> {
+    if (pane === 'remote') {
+      this.terminalFollowGeneration++;
+    }
     const session = pane === 'local' ? this.localSession : this.remoteSession;
     if (!session) return;
     try {
@@ -501,14 +530,10 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       return;
     }
     const session = this.remoteSession;
-    if (session instanceof SshFileSession && this.fsProvider.has(session.id)) {
-      // 원격 파일을 진짜 에디터로 연다 (저장하면 SFTP로 자동 업로드).
-      const uri = SftpFileSystemProvider.uri(session.id, joinRemotePath(this.remotePath, name));
-      await vscode.commands.executeCommand('vscode.open', uri);
-    } else {
-      // SSH가 아니면 (WSL 등) 로컬 패널 현재 위치로 다운로드
-      await this.startTransfer('remote', [name]);
+    if (!session) {
+      return;
     }
+    await this.remoteFileEditor.open(session, joinRemotePath(this.remotePath, name));
   }
 
   /** 심링크: 디렉터리면 진입, 아니면 파일로 연다. */
@@ -518,7 +543,7 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     const target = this.childPath(pane, name);
     try {
       await session.readdir(target);
-      await this.doEnter(pane, name);
+      await this.enter(pane, name);
     } catch {
       await this.openEntry(pane, name);
     }
@@ -537,6 +562,15 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     this.persistLocalPath();
     this.postState();
     await this.listPane('local');
+  }
+
+  private async openLocalExplorer(): Promise<void> {
+    try {
+      const opened = await vscode.env.openExternal(vscode.Uri.file(this.localPath));
+      if (!opened) throw new Error('운영체제 파일 탐색기를 시작하지 못했습니다.');
+    } catch (error) {
+      vscode.window.showErrorMessage(`VSsh: 로컬 폴더를 파일 탐색기로 열 수 없습니다 - ${describe(error)}`);
+    }
   }
 
   // ---- 파일 작업 --------------------------------------------------------------
@@ -1378,6 +1412,7 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
           <button data-act="refresh" title="새로고침">⟳</button>
           <button data-act="mkdir" title="새 폴더">＋</button>
           <button data-act="pick" title="폴더 선택">…</button>
+          <button data-act="explorer" title="현재 폴더를 파일 탐색기로 열기">▣</button>
         </span>
       </div>
       <input class="pane-path" spellcheck="false" autocomplete="off" />

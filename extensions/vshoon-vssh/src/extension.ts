@@ -49,6 +49,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const hostKeyStore = new HostKeyStore(context.globalStorageUri.fsPath);
   const sessionStorage = new SessionStorage(context.globalStorageUri.fsPath);
   const activeSessionManager = new ActiveSessionManager();
+  context.subscriptions.push(activeSessionManager);
   const broadcastManager = new BroadcastManager();
   const sftpFsProvider = new SftpFileSystemProvider();
   context.subscriptions.push(
@@ -97,6 +98,25 @@ export function activate(context: vscode.ExtensionContext): void {
   const DOUBLE_CLICK_MS = 500;
 
   context.subscriptions.push(
+    activeSessionManager.onDidChangeTerminalDirectory((event) => {
+      if (!vscode.workspace.getConfiguration('vssh.sftp').get<boolean>('autoFollowTerminal', true)) {
+        return;
+      }
+      if (activeSessionManager.getActiveTerminal() !== event.terminal) {
+        return;
+      }
+      void sftpPanel.followTerminalDirectory(event.session, event.path);
+    }),
+    vscode.window.onDidChangeTerminalShellIntegration((event) => {
+      const session = activeSessionManager.getSession(event.terminal);
+      if (!(session instanceof WslFileSession)) {
+        return;
+      }
+      const cwd = event.shellIntegration.cwd;
+      if (cwd?.path) {
+        activeSessionManager.reportTerminalDirectory(event.terminal, cwd.path);
+      }
+    }),
     terminalManager.onDidChangeConnections(() =>
       sessionsProvider.setConnectedIds(terminalManager.getConnectedSessionIds())
     ),
@@ -260,12 +280,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('vssh.sftp.refresh', () => sftpPanel.refreshBoth()),
     vscode.commands.registerCommand('vssh.sftp.changeUser', () => sftpPanel.changeRemoteUser()),
-    vscode.commands.registerCommand('vssh.sftp.toggleSync', () => sftpPanel.toggleSynchronizedNavigation()),
     vscode.commands.registerCommand('vssh.sftp.toggleHidden', () => sftpPanel.toggleHiddenFiles()),
     vscode.commands.registerCommand('vssh.sftp.toggleQueue', () => sftpPanel.toggleTransferQueue()),
     vscode.commands.registerCommand('vssh.sftp.followTerminal', () =>
       followTerminalDirectory(activeSessionManager, (path) => sftpPanel.navigateRemote(path))
     ),
+    vscode.commands.registerCommand('vssh.sftp.toggleAutoFollowTerminal', async () => {
+      const configuration = vscode.workspace.getConfiguration('vssh.sftp');
+      const enabled = !configuration.get<boolean>('autoFollowTerminal', true);
+      await configuration.update('autoFollowTerminal', enabled, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(`VSsh: 터미널 위치 자동 추적을 ${enabled ? '켰습니다' : '껐습니다'}.`);
+    }),
 
     vscode.commands.registerCommand('vssh.terminal.toggleBroadcast', () => {
       const enabled = broadcastManager.toggle();
@@ -356,6 +381,10 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       activeSessionManager.register(terminal, fileSession);
       activeSessionManager.setActive(fileSession, terminal);
+      const initialCwd = terminal.shellIntegration?.cwd;
+      if (initialCwd?.path) {
+        activeSessionManager.reportTerminalDirectory(terminal, initialCwd.path);
+      }
       const closeListener = vscode.window.onDidCloseTerminal((closed) => {
         if (closed !== terminal) return;
         connection.client.end();

@@ -106,9 +106,13 @@
 - 수정한 upstream 파일: `src/vs/workbench/services/dialogs/browser/abstractFileDialogService.ts`.
 - 수정 이유: Electron 네이티브 선택기는 제목 아이콘과 내부 레이아웃을 제품이 제어할 수 없다.
   기존 Remote/가상 파일 시스템 선택기는 유지하고, `file` scheme 하나만 요청된 경우에만 VShoon 구현을 생성한다.
-- 의존 symbol/service: `IInstantiationService`, `Schemas.file`, `VShoonFileDialog`, 기존 `SimpleFileDialog` fallback.
+  확장 호스트가 로컬 선택 요청을 빈 `availableFileSystems` 배열로 전달하는 경우에는 기본 URI와 창 scheme으로
+  로컬 요청인지 판정해 동일한 VShoon 선택기를 사용한다.
+- 의존 symbol/service: `IInstantiationService`, `IPathService.userHome`, `VShoonFileDialog`,
+  `shouldUseVShoonFileDialog`, 기존 `SimpleFileDialog` fallback.
 - 충돌 위험도: 낮음. 파일 선택기 팩토리 한 곳에 조건부 delegation만 추가한다.
-- 테스트: client typecheck, 계층 검사, VShoon 단위 테스트, 개발 빌드와 로컬/Remote 수동 확인.
+- 테스트: 빈 scheme 배열·로컬/Remote·혼합 scheme·다중 선택 정책 단위 테스트, client typecheck, 계층 검사,
+  개발 빌드와 로컬/Remote 수동 확인.
 - 제거 가능 조건: upstream이 제품별 파일 선택기 factory를 제공하는 경우.
 
 ## Copilot is shipped as upstream configures it

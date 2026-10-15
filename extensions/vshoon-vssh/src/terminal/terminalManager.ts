@@ -75,6 +75,7 @@ export class TerminalManager {
         name: profile.sessionName,
         pty,
         location: vscode.TerminalLocation.Editor,
+        isTransient: true,
       });
 
       const existing = this.terminalsBySession.get(profile.id);

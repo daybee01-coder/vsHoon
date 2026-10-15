@@ -56,7 +56,8 @@
         {
           "id": "vssh.sftp",
           "name": "SFTP",
-          "type": "webview"
+          "type": "webview",
+          "when": "vssh.connected"
         }
       ]
     },
@@ -142,9 +143,9 @@
         "icon": "$(target)"
       },
       {
-        "command": "vssh.sftp.toggleSync",
-        "title": "동기 탐색 켜기/끄기",
-        "icon": "$(sync)"
+        "command": "vssh.sftp.toggleAutoFollowTerminal",
+        "title": "터미널 위치 자동 추적 켜기/끄기",
+        "icon": "$(location)"
       },
       {
         "command": "vssh.sftp.toggleHidden",
@@ -204,6 +205,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "vssh.sftp.toggleAutoFollowTerminal",
+          "when": "view == vssh.sftp",
+          "group": "navigation@3"
+        },
+        {
           "command": "vssh.sftp.refresh",
           "when": "view == vssh.sftp",
           "group": "navigation@1"
@@ -212,11 +218,6 @@
           "command": "vssh.sftp.changeUser",
           "when": "view == vssh.sftp",
           "group": "navigation@6"
-        },
-        {
-          "command": "vssh.sftp.toggleSync",
-          "when": "view == vssh.sftp",
-          "group": "navigation@3"
         },
         {
           "command": "vssh.sftp.toggleHidden",
@@ -349,10 +350,18 @@
           "type": "boolean",
           "default": true,
           "description": "파일 전송 시 원본의 권한과 수정 시각을 최대한 보존합니다 (서버가 허용하지 않으면 조용히 건너뜁니다)."
+        },
+        "vssh.sftp.autoFollowTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "활성 SSH/WSL 터미널의 현재 디렉터리가 바뀌면 SFTP 원격 패널이 자동으로 따라갑니다."
         }
       }
     },
     "configurationDefaults": {
+      "window.restoreWindows": "none",
+      "terminal.integrated.enablePersistentSessions": false,
+      "terminal.integrated.confirmOnExit": "never",
       "terminal.integrated.copyOnSelection": true,
       "terminal.integrated.rightClickBehavior": "paste",
       "terminal.integrated.scrollback": 50000

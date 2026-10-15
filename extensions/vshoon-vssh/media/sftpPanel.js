@@ -49,7 +49,6 @@
     connected: false,
     sessionLabel: '',
     showHidden: !!persisted.showHidden,
-    syncNav: !!persisted.syncNav,
     queueVisible: !!persisted.queueVisible,
     queueHeight: Math.max(60, persisted.queueHeight || 160),
     splitPercent: Math.min(85, Math.max(15, persisted.splitPercent || 50)),
@@ -57,7 +56,6 @@
   function savePrefs() {
     vscode.setState({
       showHidden: state.showHidden,
-      syncNav: state.syncNav,
       queueVisible: state.queueVisible,
       queueHeight: state.queueHeight,
       splitPercent: state.splitPercent,
@@ -165,7 +163,7 @@
       b.addEventListener('click', () => {
         switch (b.dataset.act) {
           case 'up':
-            post({ type: 'up', pane: name, sync: state.syncNav });
+            post({ type: 'up', pane: name });
             break;
           case 'refresh':
             post({ type: 'refresh', pane: name });
@@ -175,6 +173,9 @@
             break;
           case 'pick':
             post({ type: 'pickLocalFolder' });
+            break;
+          case 'explorer':
+            post({ type: 'openLocalExplorer' });
             break;
           case 'terminal':
             post({ type: 'openTerminalHere' });
@@ -359,7 +360,7 @@
     function onListKey(e) {
       if (e.key === 'Backspace') {
         e.preventDefault();
-        post({ type: 'up', pane: name, sync: state.syncNav });
+        post({ type: 'up', pane: name });
       } else if (e.key === 'Delete' && st.selected.size) {
         e.preventDefault();
         post({ type: 'deleteRequest', pane: name, names: Array.from(st.selected) });
@@ -376,7 +377,7 @@
       const entry = st.entries.find((x) => x.name === nm);
       if (!entry) return;
       if (entry.isSymbolicLink && !entry.isDirectory) post({ type: 'openSymlink', pane: name, name: nm });
-      else if (entry.isDirectory) post({ type: 'enter', pane: name, name: nm, sync: state.syncNav });
+      else if (entry.isDirectory) post({ type: 'enter', pane: name, name: nm });
       else post({ type: 'open', pane: name, name: nm });
     }
 
@@ -432,7 +433,7 @@
       const up = document.createElement('div');
       up.className = 'row up';
       up.innerHTML = '<span class="c-name">📁 ..</span><span class="c-size"></span><span class="c-mtime"></span><span class="c-mode"></span>';
-      up.addEventListener('dblclick', () => post({ type: 'up', pane: name, sync: state.syncNav }));
+      up.addEventListener('dblclick', () => post({ type: 'up', pane: name }));
       listEl.appendChild(up);
 
       const rows = visibleEntries();
@@ -519,7 +520,7 @@
 
   const panes = { local: makePane('local'), remote: makePane('remote') };
 
-  // ---- 파일 전송 및 동기 탐색 ------------------------------------------------
+  // ---- 파일 전송 --------------------------------------------------------
   document.getElementById('toRemote').addEventListener('click', () => {
     const names = Array.from(state.local.selected);
     if (names.length) post({ type: 'transfer', from: 'local', names });
@@ -528,10 +529,6 @@
     const names = Array.from(state.remote.selected);
     if (names.length) post({ type: 'transfer', from: 'remote', names });
   });
-  function toggleSynchronizedNavigation() {
-    state.syncNav = !state.syncNav;
-    savePrefs();
-  }
   function toggleHiddenFiles() {
     state.showHidden = !state.showHidden;
     savePrefs();
@@ -690,9 +687,6 @@
         break;
       case 'toggleHidden':
         toggleHiddenFiles();
-        break;
-      case 'toggleSync':
-        toggleSynchronizedNavigation();
         break;
       case 'toggleQueue':
         setQueueVisible(!state.queueVisible);

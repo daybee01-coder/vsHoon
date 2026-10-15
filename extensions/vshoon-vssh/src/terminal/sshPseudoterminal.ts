@@ -2,6 +2,12 @@ import { Client, ClientChannel } from 'ssh2';
 import * as vscode from 'vscode';
 import * as iconv from 'iconv-lite';
 import { BroadcastManager, BroadcastTarget } from './broadcastManager';
+import {
+  directoryTrackingBootstrap,
+  ShellDirectorySequenceParser,
+  TrackableShell,
+  trackableShellFromPath,
+} from './shellDirectoryTracking';
 
 export interface SshPseudoterminalOptions {
   client: Client;
@@ -28,43 +34,73 @@ function toIconvEncoding(encoding: string): string {
 export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
   private readonly closeEmitter = new vscode.EventEmitter<number>();
+  private readonly directoryEmitter = new vscode.EventEmitter<string>();
   readonly onDidWrite = this.writeEmitter.event;
   readonly onDidClose = this.closeEmitter.event;
+  readonly onDidChangeDirectory = this.directoryEmitter.event;
 
   private stream: ClientChannel | undefined;
   private readonly iconvEncoding: string;
+  private readonly outputDecoder: ReturnType<typeof iconv.getDecoder>;
+  private readonly directoryParser = new ShellDirectorySequenceParser();
+  private closed = false;
 
   constructor(private readonly options: SshPseudoterminalOptions) {
     this.iconvEncoding = toIconvEncoding(options.encoding);
+    this.outputDecoder = iconv.getDecoder(this.iconvEncoding);
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
+    void this.openShell(initialDimensions);
+  }
+
+  private async openShell(initialDimensions: vscode.TerminalDimensions | undefined): Promise<void> {
     const cols = initialDimensions?.columns ?? 80;
     const rows = initialDimensions?.rows ?? 24;
+    const shell = await this.detectRemoteShell();
+    if (this.closed) {
+      return;
+    }
     // PuTTY 기본값(xterm)과 맞춘다. xterm-256color였을 때 vi/vim이 TERM 기반으로 마우스
     // 프로토콜을 다르게 자동감지해서 휠 스크롤 업만 안 먹는 것으로 의심됨(실제 PuTTY/다른
     // 터미널로는 같은 서버에서 문제 없음을 확인함).
-    this.options.client.shell({ term: 'xterm', cols, rows }, (err, stream) => {
+    const pty = { term: 'xterm', cols, rows, ...(shell ? { modes: { ECHO: 0 as const } } : undefined) };
+    this.options.client.shell(pty, (err, stream) => {
       if (err) {
         this.writeEmitter.fire(`\r\n연결 실패: ${err.message}\r\n`);
         this.closeEmitter.fire(1);
         return;
       }
+      if (this.closed) {
+        stream.end();
+        return;
+      }
       this.stream = stream;
       this.options.broadcastManager?.register(this);
-      stream.on('data', (data: Buffer) => this.writeEmitter.fire(this.decode(data)));
+      stream.on('data', (data: Buffer) => this.handleOutput(this.outputDecoder.write(data)));
       stream.stderr.on('data', (data: Buffer) => this.writeEmitter.fire(this.decode(data)));
       stream.on('close', () => {
+        const decoded = this.outputDecoder.end();
+        if (decoded) {
+          this.handleOutput(decoded);
+        }
+        const pending = this.directoryParser.flush();
+        if (pending) this.writeEmitter.fire(pending);
         this.options.broadcastManager?.unregister(this);
         this.closeEmitter.fire(0);
       });
+      if (shell) {
+        stream.write(this.encode(directoryTrackingBootstrap(shell)));
+      }
     });
   }
 
   close(): void {
+    this.closed = true;
     this.options.broadcastManager?.unregister(this);
     this.stream?.end();
     this.options.client.end();
+    this.directoryEmitter.dispose();
   }
 
   handleInput(data: string): void {
@@ -85,7 +121,7 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
    * 지금 이 셸이 실제로 위치한 디렉터리를 알아낸다. 별도 exec 채널로 pwd를 돌리면 로그인 시점
    * 기본 디렉터리만 나오므로(사용자가 대화형으로 cd한 상태를 못 봄), 반드시 이 인터랙티브
    * 셸 스트림에 명령을 흘려보내고 그 응답을 가로채야 한다. 그래서 터미널 화면에 pwd 명령과
-   * 결과가 잠깐 보인다 - 조용히 감추려면 훨씬 복잡해져서 v1에서는 그대로 뒀다.
+   * 결과가 잠깐 보인다. 자동 추적을 지원하지 않는 셸에서도 쓸 수 있도록 수동 fallback으로 유지한다.
    */
   getCurrentDirectory(): Promise<string> {
     const stream = this.stream;
@@ -135,4 +171,53 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
   private encode(data: string): Buffer {
     return this.iconvEncoding === 'utf8' ? Buffer.from(data, 'utf8') : iconv.encode(data, this.iconvEncoding);
   }
+
+  private handleOutput(data: string): void {
+    const parsed = this.directoryParser.push(data);
+    if (parsed.output) {
+      this.writeEmitter.fire(parsed.output);
+    }
+    for (const directory of parsed.directories) {
+      this.directoryEmitter.fire(directory);
+    }
+  }
+
+  private detectRemoteShell(): Promise<TrackableShell | undefined> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let output = '';
+      let timer: ReturnType<typeof setTimeout>;
+      const finish = (shell?: TrackableShell): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(shell);
+      };
+      timer = setTimeout(() => finish(), 1500);
+      this.options.client.exec('printf "%s" "$SHELL"', (err, stream) => {
+        if (err || settled) {
+          stream?.end();
+          finish();
+          return;
+        }
+        stream.on('data', (data: Buffer) => {
+          if (output.length < 512) {
+            output += data.toString('utf8');
+          }
+        });
+        stream.stderr.resume();
+        stream.on('close', () => finish(trackableShellFromPath(output)));
+      });
+    });
+  }
+}
+
+export function getSshPseudoterminal(terminal: vscode.Terminal | undefined): SshPseudoterminal | undefined {
+  if (!terminal) {
+    return undefined;
+  }
+  const options = terminal.creationOptions as vscode.ExtensionTerminalOptions;
+  return options.pty instanceof SshPseudoterminal ? options.pty : undefined;
 }

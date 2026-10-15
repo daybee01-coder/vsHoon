@@ -31,14 +31,14 @@ suite('VShoon File Dialog UI lifetime', () => {
 			}
 		});
 		const dialog = store.add(new VShoonFileDialog(
+			URI.file('/home'),
 			upcastPartial<IFileService>({
 				stat: async uri => upcastPartial<IFileStatWithMetadata>({ isDirectory: await stat(uri) }),
 				resolve: async uri => upcastPartial<IFileStatWithMetadata>({
 					children: (await resolve(uri)).map(name => upcastPartial<IFileStatWithMetadata>({ name, isDirectory: false }))
 				})
 			}),
-			upcastPartial<ConstructorParameters<typeof VShoonFileDialog>[1]>({ createQuickWidget: () => widget }),
-			upcastPartial<ConstructorParameters<typeof VShoonFileDialog>[2]>({ userHome: URI.file('/home') }),
+			upcastPartial<ConstructorParameters<typeof VShoonFileDialog>[2]>({ createQuickWidget: () => widget }),
 			upcastPartial<ConstructorParameters<typeof VShoonFileDialog>[3]>({ getUriLabel: uri => uri.path })
 		));
 		return {

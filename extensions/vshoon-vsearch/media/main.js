@@ -27,7 +27,6 @@
     scopePath: $('scopePath'),
     btnPickFolder: $('btnPickFolder'),
     recursive: $('recursive'),
-    includeArchives: $('includeArchives'),
     fileMask: $('fileMask'),
     status: $('status'),
     content: $('content'),
@@ -53,7 +52,6 @@
     scopeKind: 'workspace',
     scopePath: '',
     recursive: true,
-    includeArchives: true,
     fileMask: '',
     replaceOpen: false,
     replacement: '',
@@ -71,6 +69,10 @@
   let searchSeq = 0;
   let activeSearchId = -1;
   let searching = false;
+  /** 새 검색의 첫 결과가 올 때까지 이전 결과를 남겨 두어 입력 중 목록이 깜박이지 않게 한다. */
+  let staleResults = false;
+  /** 입력이 멈춘 뒤 검색을 시작하기까지의 시간. 이전 검색은 확장이 즉시 멈추므로 짧게 둔다. */
+  const SEARCH_DEBOUNCE_MS = 60;
 
   /** @type {any[]} */
   let files = [];
@@ -128,7 +130,6 @@
     state.replacement = el.replacement.value;
     state.scopePath = el.scopePath.value;
     state.recursive = el.recursive.checked;
-    state.includeArchives = el.includeArchives.checked;
     state.fileMask = el.fileMask.value;
   }
 
@@ -137,7 +138,6 @@
     el.replacement.value = state.replacement;
     el.scopePath.value = state.scopePath;
     el.recursive.checked = state.recursive;
-    el.includeArchives.checked = state.includeArchives;
     el.fileMask.value = state.fileMask;
     el.optCase.classList.toggle('active', state.caseSensitive);
     el.optWord.classList.toggle('active', state.wholeWord);
@@ -176,9 +176,7 @@
     el.btnClear.hidden = el.query.value.length === 0;
 
     el.btnReplaceAll.disabled = !state.query;
-    const selectedRow = selected >= 0 ? rows[selected] : undefined;
-    const selectedFile = selectedRow ? files[selectedRow.fileIndex] : undefined;
-    el.btnReplaceOne.disabled = !state.query || !selectedRow || Boolean(selectedFile?.readonly);
+    el.btnReplaceOne.disabled = !state.query || staleResults || selected < 0 || !rows[selected];
 
     el.btnOpenEditor.disabled = !preview.uri && selectedSet.size === 0;
     el.btnOpenEditor.textContent =
@@ -203,8 +201,7 @@
       scopeKind: state.scopeKind,
       scopePath: state.scopePath,
       recursive: state.recursive,
-      fileMask: state.fileMask,
-      includeArchives: state.includeArchives
+      fileMask: state.fileMask
     };
   }
 
@@ -213,6 +210,7 @@
   }
 
   function clearResults() {
+    staleResults = false;
     files = [];
     rows = [];
     rowEls = [];
@@ -233,7 +231,10 @@
       return;
     }
     activeSearchId = ++searchSeq;
-    clearResults();
+    staleResults = files.length > 0;
+    if (!staleResults) {
+      clearResults();
+    }
     searching = true;
     setStatus('검색 중…');
     updateEnabledState();
@@ -248,7 +249,7 @@
       return;
     }
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(startSearch, 300);
+    searchTimer = setTimeout(startSearch, SEARCH_DEBOUNCE_MS);
   }
 
   /* ------------------------------------------------------------------ *
@@ -950,7 +951,6 @@
     readUi();
     startSearch();
   });
-  el.includeArchives.addEventListener('change', scheduleSearch);
   el.replacement.addEventListener('input', () => {
     readUi();
     persist();
@@ -1000,7 +1000,7 @@
   el.btnReplaceOne.addEventListener('click', () => {
     readUi();
     const row = rows[selected];
-    if (!row) {
+    if (!row || staleResults) {
       return;
     }
     const file = files[row.fileIndex];
@@ -1255,6 +1255,9 @@
         if (message.id !== activeSearchId) {
           break;
         }
+        if (staleResults) {
+          clearResults();
+        }
         appendFiles(message.files);
         setStatus('검색 중… ' + files.length + '개 파일');
         break;
@@ -1262,6 +1265,9 @@
       case 'searchDone': {
         if (message.id !== activeSearchId) {
           break;
+        }
+        if (staleResults) {
+          clearResults();
         }
         searching = false;
         const seconds = (message.elapsedMs / 1000).toFixed(2);
@@ -1280,9 +1286,6 @@
             (rowLimitReached ? ' — 화면 표시 항목이 일부 생략되었습니다.' : '') +
             (message.cancelled ? ' — 중지됨' : '');
         }
-        if (message.archivePending > 0) {
-          text += ' — JAR 분석 중 ' + message.archivePending + '개 대기';
-        }
         setStatus(replaceNote + text);
         replaceNote = '';
         highlightMatches();
@@ -1296,6 +1299,9 @@
       }
 
       case 'searchError':
+        if (staleResults) {
+          clearResults();
+        }
         searching = false;
         setStatus('검색 오류: ' + message.message, true);
         updateEnabledState();

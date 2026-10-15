@@ -16,5 +16,17 @@
 	"git.ignoredRepositories": [
 		".core",
 		".i18n"
-	]
+	],
+	// `VSCode-win32-*` is the packaged build. Electron opens any `.asar` it touches as an archive
+	// and keeps the handle until the process exits, so an editor that lists, watches or searches
+	// the folder makes the next package build fail with EBUSY on `node_modules.asar`.
+	"files.exclude": {
+		"VSCode-win32-*": true
+	},
+	"files.watcherExclude": {
+		"**/VSCode-win32-*/**": true
+	},
+	"search.exclude": {
+		"VSCode-win32-*": true
+	}
 }

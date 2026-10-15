@@ -11,6 +11,7 @@
 		"sync:monaco": "node scripts/sync-vsearch-monaco.mjs",
 		"core": "node scripts/core-exec.mjs",
 		"brand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-brand-assets.ps1",
+		"portable:register": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/register-portable-shortcut.ps1",
 		"patch:save": "node scripts/save-patches.mjs",
 		"typecheck": "node scripts/core-exec.mjs run typecheck-client",
 		"transpile": "node scripts/core-exec.mjs run transpile-client",

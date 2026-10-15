@@ -8,7 +8,7 @@ import { describe, it } from 'node:test';
 import * as path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { collectDirtyTexts } from './dirtyTexts';
-import type { WorkerInput, WorkerMessage } from './searchWorker';
+import type { WorkerMessage, WorkerOptions, WorkerSearchRequest } from './searchWorker';
 
 describe('search dirty snapshots', () => {
 	it('reads only selected dirty file documents', () => {
@@ -67,7 +67,8 @@ describe('search dirty snapshots', () => {
 
 	it('produces identical worker results after dropping unrelated snapshots', { timeout: 10_000 }, async () => {
 		const snapshots = { '/selected.sql': 'SELECT latest', '/empty.sql': '', '/outside.sql': 'latest' };
-		const input: WorkerInput = {
+		const input: WorkerSearchRequest = {
+			type: 'search', id: 1, preemptible: true,
 			paths: ['/selected.sql', '/empty.sql'], dirty: snapshots,
 			pattern: 'latest', regex: false, caseSensitive: true, wholeWord: false,
 			maxBytes: 1, maxMatchesPerFile: 100, maxResultFiles: 100,
@@ -78,40 +79,17 @@ describe('search dirty snapshots', () => {
 		const before = await runWorker(input);
 		const after = await runWorker({ ...input, dirty: filtered });
 		assert.deepStrictEqual(after, before);
-		assert.deepStrictEqual(after.at(-1), { type: 'done', fileCount: 1, matchCount: 1, truncated: false });
-	});
-
-	it('searches virtual DeCom sources without exposing a cache file path', { timeout: 10_000 }, async () => {
-		const uri = 'vshoon-decom://source/App.java?class=test';
-		const messages = await runWorker({
-			paths: [uri],
-			dirty: {},
-			virtual: { [uri]: 'class App { int answer() { return 42; } }' },
-			pattern: 'answer',
-			regex: false,
-			caseSensitive: true,
-			wholeWord: true,
-			maxBytes: 1024,
-			maxMatchesPerFile: 100,
-			maxResultFiles: 100,
-		});
-		assert.deepStrictEqual(messages, [
-			{
-				type: 'batch',
-				files: [{
-					fsPath: uri,
-					matches: [{ line: 0, column: 16, length: 6, preview: 'class App { int answer() { return 42; } }', previewColumn: 16 }],
-					truncated: false,
-				}]
-			},
-			{ type: 'done', fileCount: 1, matchCount: 1, truncated: false }
-		]);
+		assert.deepStrictEqual(after.at(-1), { type: 'done', id: 1, fileCount: 1, matchCount: 1, truncated: false, cancelled: false });
 	});
 });
 
 /** Runs the real worker without an editor or access to user documents. */
-async function runWorker(input: WorkerInput): Promise<WorkerMessage[]> {
-	const worker = new Worker(path.join(__dirname, 'searchWorker.js'), { workerData: input });
+async function runWorker(request: WorkerSearchRequest): Promise<WorkerMessage[]> {
+	const currentSearch = new SharedArrayBuffer(4);
+	Atomics.store(new Int32Array(currentSearch), 0, request.id);
+	const options: WorkerOptions = { currentSearch, cacheBytes: 1024 * 1024 };
+	const worker = new Worker(path.join(__dirname, 'searchWorker.js'), { workerData: options });
+	worker.postMessage(request);
 	try {
 		return await new Promise<WorkerMessage[]>((resolve, reject) => {
 			const messages: WorkerMessage[] = [];

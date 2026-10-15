@@ -13,7 +13,6 @@ import { ThemeIcon } from '../../../base/common/themables.js';
 import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IOpenDialogOptions, ISaveDialogOptions } from '../../../platform/dialogs/common/dialogs.js';
-import { INativeEnvironmentService } from '../../../platform/environment/common/environment.js';
 import { IFileService } from '../../../platform/files/common/files.js';
 import { ILabelService } from '../../../platform/label/common/label.js';
 import { IQuickInputButton, IQuickInputService } from '../../../platform/quickinput/common/quickInput.js';
@@ -23,9 +22,9 @@ import './vshoonFileDialog.css';
 export class VShoonFileDialog extends Disposable {
 
 	constructor(
+		private readonly userHome: URI,
 		@IFileService private readonly fileService: IFileService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
-		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@ILabelService private readonly labelService: ILabelService
 	) { super(); }
 
@@ -84,7 +83,7 @@ export class VShoonFileDialog extends Disposable {
 		// file system confirms it, and that read happens after the dialog is on screen so a slow
 		// or unavailable folder cannot hold the whole dialog back.
 		const defaultFileUri = options.defaultUri?.scheme === Schemas.file ? options.defaultUri : undefined;
-		let current = save && defaultFileUri ? resources.dirname(defaultFileUri) : defaultFileUri ?? this.environmentService.userHome;
+		let current = save && defaultFileUri ? resources.dirname(defaultFileUri) : defaultFileUri ?? this.userHome;
 		const history: URI[] = [current];
 		let historyIndex = 0;
 		let selected: IFileDialogNode | undefined;
@@ -125,7 +124,7 @@ export class VShoonFileDialog extends Disposable {
 		const forward = iconButton(Codicon.arrowRight, localize('vshoon.fileDialog.forward', "Forward"), async () => {
 			if (historyIndex + 1 < history.length) { await navigate(history[++historyIndex], false); }
 		});
-		iconButton(Codicon.home, localize('vshoon.fileDialog.home', "Home"), async () => navigate(this.environmentService.userHome));
+		iconButton(Codicon.home, localize('vshoon.fileDialog.home', "Home"), async () => navigate(this.userHome));
 		iconButton(Codicon.arrowUp, localize('vshoon.fileDialog.parent', "Parent Folder"), async () => navigate(resources.dirname(current)));
 		iconButton(Codicon.refresh, localize('vshoon.fileDialog.refresh', "Refresh"), async () => render());
 
@@ -266,7 +265,7 @@ export class VShoonFileDialog extends Disposable {
 						start = resources.dirname(start);
 					}
 				} catch {
-					start = this.environmentService.userHome;
+					start = this.userHome;
 				}
 			}
 			// A navigation, refresh or close owns the UI now. Initial I/O must not take it back.

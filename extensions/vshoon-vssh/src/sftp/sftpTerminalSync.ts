@@ -1,16 +1,9 @@
 import * as vscode from 'vscode';
 import { shellQuote } from '../common/shellQuote';
-import { SshPseudoterminal } from '../terminal/sshPseudoterminal';
+import { getSshPseudoterminal } from '../terminal/sshPseudoterminal';
 import { WslFileSession } from '../wsl/wslFileSession';
 import { getWslTerminalDirectory } from '../wsl/wslTerminal';
 import { ActiveSessionManager } from './activeSessionManager';
-
-/** vscode.Terminal이 우리 SshPseudoterminal로 만들어진 경우에만 그 인스턴스를 꺼낸다. */
-function getSshPseudoterminal(terminal: vscode.Terminal | undefined): SshPseudoterminal | undefined {
-  if (!terminal) return undefined;
-  const options = terminal.creationOptions as vscode.ExtensionTerminalOptions;
-  return options.pty instanceof SshPseudoterminal ? options.pty : undefined;
-}
 
 /** SFTP 원격 패널의 현재 경로로 활성 터미널의 셸을 cd 시킨다 (SSH·WSL 터미널 모두 sendText). */
 export function cdTerminalToPath(activeSessionManager: ActiveSessionManager, targetPath: string): void {
