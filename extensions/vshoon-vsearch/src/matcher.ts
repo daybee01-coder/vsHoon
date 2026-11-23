@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 /**
  * 순수 매칭 로직. **vscode 모듈에 의존하지 않는다.**
  *
@@ -122,16 +127,13 @@ export function expandReplacement(replacement: string, match: RegExpExecArray): 
  * ------------------------------------------------------------------ */
 
 export function isBinary(buffer: Uint8Array): boolean {
-  const len = Math.min(buffer.length, 8192);
-  for (let i = 0; i < len; i++) {
-    if (buffer[i] === 0) {
-      return true;
-    }
-  }
-  return false;
+  return buffer.subarray(0, 8192).indexOf(0) !== -1;
 }
 
+/** 파일마다 새로 만들지 않는다. fatal 이 아니므로 상태가 남지 않는다. */
+const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+
 export function decodeText(buffer: Uint8Array): string {
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+  const text = utf8Decoder.decode(buffer);
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }

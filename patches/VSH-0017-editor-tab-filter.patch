@@ -1,0 +1,79 @@
+diff --git a/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts b/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts
+index 9b68bee9ebf9..a0861fd1c48d 100644
+--- a/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts
++++ b/src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts
+@@ -58,6 +58,7 @@ import { IReadonlyEditorGroupModel } from '../../../common/editor/editorGroupMod
+ import { IHostService } from '../../../services/host/browser/host.js';
+ import { BugIndicatingError } from '../../../../base/common/errors.js';
+ import { applyDragImage } from '../../../../base/browser/ui/dnd/dnd.js';
++import { bindVShoonEditorTabFilter, vshoonEditorTabFilter } from '../../../../vshoon/browser/editorTabFilter.js';
+ 
+ const modifierKeyEmitter = ModifierKeyEmitter.getInstance();
+ 
+@@ -179,6 +180,22 @@ export class MultiEditorTabsControl extends EditorTabsControl {
+ 		// React to Alt being held/released to swap in the "Close Others" tab action
+ 		// for the currently hovered tab only (if any).
+ 		this._register(modifierKeyEmitter.event(() => this.updateTabActionForHoveredTab()));
++
++		// VShoon: show only the main, SSH or SQL editor tabs (VSH-0017)
++		this._register(bindVShoonEditorTabFilter(this.contextKeyService, () => this.handleVShoonEditorTabFilterChange()));
++	}
++
++	private handleVShoonEditorTabFilterChange(): void {
++		const activeEditor = this.groupView.activeEditor;
++		if (activeEditor && !vshoonEditorTabFilter.isVisible(activeEditor)) {
++			const visibleEditor = this.groupView.getEditors(EditorsOrder.MOST_RECENTLY_ACTIVE).find(editor => vshoonEditorTabFilter.isVisible(editor));
++			if (visibleEditor) {
++				const isActiveGroup = this.groupsView.activeGroup === this.groupView;
++				this.groupView.openEditor(visibleEditor, { preserveFocus: !isActiveGroup, activation: isActiveGroup ? undefined : EditorActivation.PRESERVE });
++			}
++		}
++
++		this.redraw({ forceRevealActiveTab: true });
+ 	}
+ 
+ 	private updateTabActionForHoveredTab(): void {
+@@ -641,6 +658,11 @@ export class MultiEditorTabsControl extends EditorTabsControl {
+ 			this.layout(this.dimensions, { forceRevealActiveTab: true });
+ 		}
+ 
++		// VShoon: an editor opened from outside the tab bar switches to its tab group (VSH-0017)
++		if (activeEditorChanged && this.tabsModel.activeEditor) {
++			vshoonEditorTabFilter.reveal(this.tabsModel.activeEditor);
++		}
++
+ 		return didChange;
+ 	}
+ 
+@@ -1717,6 +1739,9 @@ export class MultiEditorTabsControl extends EditorTabsControl {
+ 
+ 		tabContainer.classList.toggle('has-icon', options.showIcons && options.hasIcons);
+ 
++		// VShoon: the active tab stays visible when its group has no tab of the chosen kind (VSH-0017)
++		tabContainer.style.display = this.tabsModel.isActive(editor) || vshoonEditorTabFilter.isVisible(editor) ? '' : 'none';
++
+ 		tabContainer.classList.toggle('sticky', isTabSticky);
+ 		for (const option of ['normal', 'compact', 'shrink']) {
+ 			tabContainer.classList.toggle(`sticky-${option}`, isTabSticky && options.pinnedTabSizing === option);
+diff --git a/src/vs/workbench/browser/parts/sidebar/sidebarPart.ts b/src/vs/workbench/browser/parts/sidebar/sidebarPart.ts
+index bb6e12239a04..01cac69800d3 100644
+--- a/src/vs/workbench/browser/parts/sidebar/sidebarPart.ts
++++ b/src/vs/workbench/browser/parts/sidebar/sidebarPart.ts
+@@ -36,6 +36,7 @@ import { localize2 } from '../../../../nls.js';
+ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+ import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
+ import { Extensions } from '../../panecomposite.js';
++import { vshoonEditorTabFilter } from '../../../../vshoon/browser/editorTabFilter.js';
+ 
+ const PRIMARY_SIDE_BAR_SASH_CLASS = 'primary-sidebar-sash';
+ 
+@@ -132,6 +133,9 @@ export class SidebarPart extends AbstractPaneCompositePart {
+ 		}));
+ 
+ 		this.registerActions();
++
++		// VShoon: show the editor tabs that go with the chosen side bar view (VSH-0017)
++		this._register(this.onDidPaneCompositeOpen(composite => vshoonEditorTabFilter.showForViewContainer(composite.getId())));
+ 	}
+ 
+ 	private onDidChangeAutoHideViewContainers(e: { before: number; after: number }): void {

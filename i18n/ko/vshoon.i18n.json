@@ -39,7 +39,17 @@
 			"vshoon.ui.modalWebviews": "번들 웹뷰 패널을 VShoon 작업 영역의 모달 편집기로 열도록 선언합니다.",
 			"vshoon.ui.modalWebviews.version": "VShoon 모달 웹뷰 capability 버전입니다.",
 			"vshoon.ui.modalWebviews.viewType": "모달 편집기로 열 웹뷰 패널 형식입니다.",
-			"vshoon.ui.modalWebviews.permissionRequired": "VShoon 모달 웹뷰는 현재 번들 확장에만 제공됩니다."
+			"vshoon.ui.modalWebviews.permissionRequired": "VShoon 모달 웹뷰는 현재 번들 확장에만 제공됩니다.",
+			"vshoon.ui.modalWebviews.presentation": "이 패널을 별도 데스크톱 창으로 엽니다."
+		},
+		"vs/vshoon/browser/editorTabFilter": {
+			"vshoonEditorTabFilter.category": "편집기 탭",
+			"vshoonEditorTabFilter.menu": "편집기 탭 표시",
+			"vshoonEditorTabFilter.menuFiltered": "편집기 탭 표시(필터 적용됨)",
+			"vshoonEditorTabFilter.all": "모든 편집기",
+			"vshoonEditorTabFilter.main": "메인 편집기",
+			"vshoonEditorTabFilter.ssh": "SSH 터미널",
+			"vshoonEditorTabFilter.sql": "SQL 편집기"
 		}
 	}
 }

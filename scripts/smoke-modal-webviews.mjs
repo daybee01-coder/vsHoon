@@ -43,15 +43,10 @@ const MODALS = [
 		commandMatch: '새 세션 추가',
 		title: 'VSsh: 새 세션',
 		size: { width: 540, height: 560 }
-	},
-	{
-		extension: 'vshoon-vsearch',
-		command: 'VSearch: 전체 검색 열기',
-		commandMatch: '전체 검색 열기',
-		title: 'VSearch',
-		size: { width: 1200, height: 700 }
 	}
 ];
+
+// VSearch now opens a native auxiliary window, covered by smoke:java-search.
 
 /**
  * Whether a webview iframe is laid out inside the modal dialog.

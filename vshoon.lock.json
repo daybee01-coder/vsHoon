@@ -15,6 +15,7 @@
 		"extensions/vshoon-vssh",
 		"extensions/vshoon-vsearch",
 		"extensions/vshoon-ui-sample",
+		"extensions/vshoon-spring",
 		"extensions/vshoon-language-pack-ko",
 		"resources/win32/VisualElementsManifest.xml",
 		"resources/win32/code.ico",
@@ -51,7 +52,8 @@
 		"VSH-0013-native-file-drag.patch",
 		"VSH-0014-new-window-start.patch",
 		"VSH-0015-start-project-new-window.patch",
-		"VSH-0016-inline-jar-explorer.patch"
+		"VSH-0016-inline-jar-explorer.patch",
+		"VSH-0017-editor-tab-filter.patch"
 	],
 	"$languagePacksComment": "Display language translations. They are Microsoft's, MIT licensed, and released on their own schedule, so they are pinned and fetched like the core rather than committed. `npm run sync:i18n` regenerates the built-in packs.",
 	"languagePacks": {

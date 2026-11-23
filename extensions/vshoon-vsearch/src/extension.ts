@@ -1,5 +1,11 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 import * as vscode from 'vscode';
 import { SEARCH_PANEL_VIEW_TYPE, SearchPanel } from './searchPanel';
+import { SearchEngine } from './searchEngine';
 
 /** 현재 에디터에서 선택한 텍스트를 초기 검색어로 사용한다. */
 function selectionAsQuery(): string | undefined {
@@ -12,18 +18,21 @@ function selectionAsQuery(): string | undefined {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const engine = new SearchEngine();
+  context.subscriptions.push(engine);
+  void engine.startIndexing();
   context.subscriptions.push(
     // Shift 두 번
     vscode.commands.registerCommand('vsearch.open', () => {
-      SearchPanel.createOrShow(context, { focus: 'search', query: selectionAsQuery() });
+      SearchPanel.createOrShow(context, engine, { focus: 'search', query: selectionAsQuery() });
     }),
 
     vscode.commands.registerCommand('vsearch.openReplace', () => {
-      SearchPanel.createOrShow(context, { focus: 'replace', query: selectionAsQuery() });
+      SearchPanel.createOrShow(context, engine, { focus: 'replace', query: selectionAsQuery() });
     }),
 
     vscode.commands.registerCommand('vsearch.searchInFolder', (uri?: vscode.Uri) => {
-      SearchPanel.createOrShow(context, {
+      SearchPanel.createOrShow(context, engine, {
         focus: 'search',
         scopePath: uri?.fsPath,
         query: selectionAsQuery()
@@ -37,7 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
           enableScripts: true,
           localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
         };
-        SearchPanel.revive(panel, context);
+        SearchPanel.revive(panel, context, engine);
       }
     })
   );

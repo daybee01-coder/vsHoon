@@ -34,6 +34,11 @@ instead of creating an empty Workbench, while explicit targets and specialized w
 their upstream behavior. Disabling `vshoon.startWindow.enabled` restores the ordinary empty-window
 behavior for this action as well.
 
+The chooser opens on the display of the Workbench that invoked it. When no Workbench is open,
+the chooser uses its most recently used display, or the primary display if that display is
+unavailable. A folder, workspace, recent project or empty window opened from the chooser
+uses the display the chooser occupies at the time of selection.
+
 Selecting a folder, workspace or recent project in the launcher always creates a new Workbench,
 including another window for an already open project. Only this launcher request carries the
 internal `vshoonNewProjectWindow` option (VSH-0015); ordinary CLI and API deduplication is unchanged.

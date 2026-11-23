@@ -20,6 +20,14 @@
 			"supported": true
 		}
 	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./out/extension.js",
+	"scripts": {
+		"compile": "gulp compile-extension:vshoon-start",
+		"watch": "gulp watch-extension:vshoon-start"
+	},
 	"contributes": {
 		"configurationDefaults": {
 			"files.simpleDialog.enable": true,

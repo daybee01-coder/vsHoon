@@ -15,7 +15,9 @@ import type { ProfileStore } from '../config/profileStore';
 import type { ConnectionManager } from '../db/connectionManager';
 import { testConnection } from '../db/connectionTest';
 import { getDriver } from '../db/registry';
+import type { Session } from '../db/session';
 import type { CatalogCache } from '../metadata/catalog';
+import { buildDropObjectSql } from '../sql/dropObject';
 import {
   DIALECT_LABELS,
   type ConnectionProfile,
@@ -158,6 +160,8 @@ export function registerCommands(deps: {
    * 한다. (다만 원본을 지웠다면 저장된 비밀번호는 함께 사라진다.)
    */
   let clipboard: ConnectionProfile[] = [];
+  let deletingObjects = false;
+  const pendingSchemaDrops = new WeakSet<Session>();
 
   /**
    * 명령이 대상으로 삼을 연결들.
@@ -165,17 +169,19 @@ export function registerCommands(deps: {
    * 트리 메뉴는 (누른 노드, 선택된 노드 전체) 두 인자를 준다 — 여러 개를 골라 두고
    * 우클릭하면 그 전부가 대상이다. 키보드로 부르면 인자가 없으므로 선택을 본다.
    */
+  function treeTargets(arg: unknown, many: unknown): readonly TreeNode[] {
+    const nodes: readonly unknown[] = Array.isArray(many) && many.length > 0
+      ? many
+      : arg !== undefined && arg !== null ? [arg] : treeView.selection;
+    return nodes.filter((node): node is TreeNode =>
+      node !== null && typeof node === 'object' && Object.hasOwn(node, 'kind'));
+  }
+
   function connectionTargets(arg: unknown, many: unknown): ConnectionProfile[] {
-    const nodes: readonly unknown[] =
-      Array.isArray(many) && many.length > 0
-        ? many
-        : arg !== undefined && arg !== null
-          ? [arg]
-          : treeView.selection;
     const picked: ConnectionProfile[] = [];
-    for (const node of nodes) {
-      if (node && typeof node === 'object' && 'kind' in node && node.kind === 'connection') {
-        picked.push((node as Extract<TreeNode, { kind: 'connection' }>).profile);
+    for (const node of treeTargets(arg, many)) {
+      if (node.kind === 'connection') {
+        picked.push(node.profile);
       }
     }
     return picked;
@@ -488,11 +494,12 @@ export function registerCommands(deps: {
      * 클립보드로 보낸다. 같은 키가 항목에 따라 아무 일도 하지 않으면 고장으로 보인다.
      */
     vscode.commands.registerCommand('dbconn.copyTreeItem', async (arg: unknown, many: unknown) => {
-      if (connectionTargets(arg, many).length > 0) {
+      const targets = treeTargets(arg, many);
+      if (targets.length > 0 && targets.every(node => node.kind === 'connection')) {
         await vscode.commands.executeCommand('dbconn.copyConnection', arg, many);
         return;
       }
-      await vscode.commands.executeCommand('dbconn.copyName', arg ?? selectedNode());
+      await vscode.commands.executeCommand('dbconn.copyName', arg, many);
     }),
 
     /**
@@ -1102,6 +1109,10 @@ export function registerCommands(deps: {
       }
       try {
         await session.commit();
+        if (pendingSchemaDrops.delete(session)) {
+          catalog.invalidate(session.profile.id);
+          tree.refresh();
+        }
         void vscode.window.setStatusBarMessage('$(check) 커밋했습니다.', 2500);
       } catch (error) {
         void vscode.window.showErrorMessage(
@@ -1117,6 +1128,7 @@ export function registerCommands(deps: {
       }
       try {
         await session.rollback();
+        pendingSchemaDrops.delete(session);
         void vscode.window.setStatusBarMessage('$(discard) 롤백했습니다.', 2500);
       } catch (error) {
         void vscode.window.showErrorMessage(
@@ -1423,26 +1435,87 @@ export function registerCommands(deps: {
 
     // ── 진단 ────────────────────────────────────────────────────────────────
 
-    vscode.commands.registerCommand('dbconn.copyName', async (arg: unknown) => {
-      const node = arg as TreeNode | undefined;
-      if (!node) {
+    vscode.commands.registerCommand('dbconn.copyName', async (arg: unknown, many: unknown) => {
+      const names = treeTargets(arg, many).flatMap(node => {
+        switch (node.kind) {
+          case 'group': return [node.path];
+          case 'connection': return [node.profile.name];
+          case 'schema': return [node.schema];
+          case 'table': return [`${node.table.schema}.${node.table.name}`];
+          case 'object': return [`${node.object.schema}.${node.object.name}`];
+          case 'column': return [node.column.name];
+          default: return [];
+        }
+      });
+      if (names.length) {
+        await vscode.env.clipboard.writeText(names.join('\n'));
+        void vscode.window.setStatusBarMessage(vscode.l10n.t('$(check) Copied {0} names.', names.length), 2000);
+      }
+    }),
+
+    vscode.commands.registerCommand('dbconn.dropObjects', async (arg: unknown, many: unknown) => {
+      const nodes = treeTargets(arg, many);
+      if (!nodes.length || deletingObjects) {
         return;
       }
-      const text =
-        node.kind === 'group'
-          ? node.path
-          : node.kind === 'table'
-            ? `${node.table.schema}.${node.table.name}`
-            : node.kind === 'column'
-              ? node.column.name
-              : node.kind === 'schema'
-                ? node.schema
-                : node.kind === 'connection'
-                  ? node.profile.name
-                  : '';
-      if (text) {
-        await vscode.env.clipboard.writeText(text);
-        void vscode.window.setStatusBarMessage(`$(check) 복사: ${text}`, 2000);
+      deletingObjects = true;
+      try {
+        const groups = new Map<Session, Set<string>>();
+        for (const node of nodes) {
+          const target = tree.dropTarget(node);
+          if (!target) {
+            return;
+          }
+          const session = connections.get(target.profileId);
+          if (!session || session.profile.readOnly) {
+            throw new Error(vscode.l10n.t('All selected objects require an active, writable database connection.'));
+          }
+          const sql = buildDropObjectSql(target.object, session.profile.dialect);
+          if (!sql) {
+            throw new Error(vscode.l10n.t('Cannot drop the selected object "{0}".', target.object.name));
+          }
+          const statements = groups.get(session) ?? new Set<string>();
+          statements.add(sql);
+          groups.set(session, statements);
+        }
+
+        for (const [session, statements] of groups) {
+          if (!await executor.confirmSchemaDrops(session, [...statements])) {
+            return;
+          }
+        }
+        for (const session of groups.keys()) {
+          if (connections.get(session.profile.id) !== session) {
+            throw new Error(vscode.l10n.t('The database connection changed. Select the objects again.'));
+          }
+        }
+
+        let total = 0;
+        let executed = 0;
+        let pendingCommit = false;
+        for (const [session, statements] of groups) {
+          total += statements.size;
+          try {
+            const count = await executor.executeSchemaDrops(session, [...statements]);
+            if (session.transactionState !== 'failed') {
+              executed += count;
+            }
+            if (count > 0 && session.profile.dialect === 'postgres' && session.transactionState === 'active') {
+              pendingSchemaDrops.add(session);
+              pendingCommit = true;
+            }
+          } finally {
+            catalog.invalidate(session.profile.id);
+            tree.refresh();
+          }
+        }
+        void vscode.window.showInformationMessage(pendingCommit
+          ? vscode.l10n.t('Executed {0} of {1} drops. Commit the open PostgreSQL transaction to apply its changes.', executed, total)
+          : vscode.l10n.t('Dropped {0} of {1} selected database objects.', executed, total));
+      } catch (error) {
+        void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        deletingObjects = false;
       }
     }),
 

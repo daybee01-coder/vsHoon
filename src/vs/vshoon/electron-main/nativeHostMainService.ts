@@ -28,7 +28,7 @@ export function wrapVShoonNativeHostMainService(
 		const decision = evaluateVShoonNewWindow(!Array.isArray(arg1) && arg1?.vshoonStartWindow === true, isStartWindowEnabled());
 		logService.trace('vshoon#newWindowDecision', decision);
 		if (decision.show) {
-			if (await startWindowMainService.show({ quitWhenClosed: false })) {
+			if (await startWindowMainService.show({ quitWhenClosed: false, sourceWindowId: windowId })) {
 				return;
 			}
 		}

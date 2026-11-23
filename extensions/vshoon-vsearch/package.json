@@ -13,6 +13,7 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": ["*"],
   "contributes": {
     "vshoon.ui.modalWebviews": [
       {
@@ -90,6 +91,12 @@
           "type": "number",
           "default": 500,
           "description": "파일 하나당 표시할 최대 일치 개수."
+        },
+        "vsearch.maxTotalMatches": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 0,
+          "description": "검색 한 번에 표시할 전체 일치 개수 상한. 0이면 제한하지 않습니다. 모두 바꾸기는 이 상한과 관계없이 모든 파일을 바꿉니다."
         },
         "vsearch.excludeGlobs": {
           "type": "array",

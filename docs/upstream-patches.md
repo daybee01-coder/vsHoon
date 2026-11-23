@@ -21,8 +21,44 @@
 | VSH-0012 | `patches/VSH-0012-os-file-drops.patch` | 선언한 bundled 웹뷰 뷰에 OS 파일 드롭 경로 전달 |
 | VSH-0013 | `patches/VSH-0013-native-file-drag.patch` | 로컬 파일을 OS 드래그로 내보내는 네이티브 seam |
 | VSH-0014 | `patches/VSH-0014-new-window-start.patch` | Workbench 새 창 요청을 콤팩트 시작 창으로 표시하는 표식 |
-| VSH-0015 | `patches/VSH-0015-start-project-new-window.patch` | 시작 창에서 이미 열린 프로젝트도 별도 IDE 창으로 열기 |
+| VSH-0015 | `patches/VSH-0015-start-project-new-window.patch` | 시작 창에서 이미 열린 프로젝트도 별도 IDE 창으로 열고 시작 창의 모니터 사용 |
 | VSH-0016 | `patches/VSH-0016-inline-jar-explorer.patch` | 기본 Explorer의 JAR 파일 노드 아래에 Decom 읽기 전용 VFS 내용 표시 |
+| VSH-0017 | `patches/VSH-0017-editor-tab-filter.patch` | 편집기 탭 막대를 메인·SSH·SQL 그룹별로 걸러 표시, 사이드바 선택에 따라 그룹 전환 |
+
+## VSH-0017 — 편집기 탭 그룹 필터
+
+- 목적: 편집기 제목 도구 모음의 필터 버튼으로 **모든 편집기 / 메인 편집기 / SSH 터미널 / SQL 편집기** 중
+  하나를 고르면 그 그룹의 탭만 탭 막대에 보이고 나머지는 숨긴다. 편집기는 닫지 않는다.
+- 수정한 upstream 파일: `src/vs/workbench/browser/parts/editor/multiEditorTabsControl.ts`,
+  `src/vs/workbench/browser/parts/sidebar/sidebarPart.ts`.
+- 수정 이유: 확장 API는 탭을 닫을 수는 있어도 숨길 수 없다. 탭을 닫았다 다시 여는 방식은 SSH 터미널
+  세션과 저장하지 않은 SQL 스크립트를 잃는다. 탭 DOM은 편집기 인덱스와 1:1로 묶여 있어(드래그 앤 드롭,
+  스크롤, 고정 탭 위치) 탭을 빼는 대신 표시만 끈다.
+- VShoon 소유 구현: `src/vs/vshoon/common/editorTabFilter.ts`(분류, 창 단위 필터 상태, 그룹 context key
+  연결), `src/vs/vshoon/browser/editorTabFilter.ts`(제목 도구 모음 드롭다운과 명령 팔레트 명령
+  `vshoon.editorTabs.show.{all,main,ssh,sql}`).
+- 분류: 편집기 영역 터미널(`workbench.editors.terminal`, VSsh SSH·WSL 세션) → SSH, 언어가 `sql`이거나
+  확장자가 `.sql`인 편집기(DBConn의 제목 없는 스크립트 포함) → SQL, 나머지 → 메인.
+- 동작: seam은 세 곳이다. (1) 필터가 바뀌면 각 그룹이 활성 편집기가 숨겨질 경우 그 그룹에서 가장 최근에 쓴
+  보이는 편집기로 바꾸고 탭을 다시 그린다. 해당 그룹에 맞는 편집기가 없으면 활성 탭 하나만 남긴다.
+  (2) 빠른 열기·탐색기·확장 명령으로 다른 그룹의 편집기가 활성화되면 필터가 그 그룹으로 따라간다.
+  (3) 탭을 그릴 때 활성 탭이 아니고 필터에 맞지 않으면 `display: none`. (4) 사이드바가 탐색기·VSsh·Database 뷰
+  컨테이너를 열면 각각 메인·SSH·SQL로 전환한다(`showForViewContainer`). 사이드바 뷰 컨테이너 전환을 알려 주는 확장
+  API가 없고 탐색기는 코어 뷰라 `SidebarPart`의 `onDidPaneCompositeOpen`에 한 줄을 붙였다.
+- 의존 symbol/service: `MultiEditorTabsControl.redrawTab`, `handleOpenedEditors`, `IEditorGroupView.getEditors`·
+  `openEditor`, `EditorTabsControl.contextKeyService`, `MenuId.EditorTitle`, `TerminalEditorInput.ID`,
+  `FileEditorInput`/`UntitledTextEditorInput`의 `getLanguageId()`.
+- 충돌 위험도: 낮음. import 한 줄, 생성자 등록과 private 메서드 하나, 기존 메서드 두 곳에 각각 조건 하나.
+  `sidebarPart.ts`는 import 한 줄과 생성자 등록 한 줄.
+  upstream이 탭 DOM 구성이나 `handleOpenedEditors`를 바꾸면 재검토가 필요하다.
+- 한계: 필터는 창 메모리에만 있어 새로 고침하면 **모든 편집기**로 돌아간다. 고정 탭을 compact/shrink로
+  쓰는 경우 숨긴 고정 탭 자리만큼 고정 위치 계산이 어긋날 수 있다. Ctrl+Tab 등 그룹 내 편집기 순환은 숨긴
+  편집기도 거치며, 그때 필터가 해당 그룹으로 바뀐다.
+- 테스트: `src/vs/vshoon/test/common/editorTabFilter.test.ts`(분류, 필터 전환, reveal, context key),
+  client typecheck, 계층 검사, `sync:check`. 개발 빌드에서 Java·SQL·텍스트 파일과 편집기 터미널을 연 뒤
+  드롭다운과 명령 팔레트로 그룹을 바꿔 보이는 탭이 그룹과 일치하는지, 메인 필터에서 `.sql`을 열면 SQL로
+  전환되는지 Playwright로 확인했다.
+- 제거 가능 조건: upstream이 탭 필터링 또는 편집기 탭 그룹 API를 제공하는 경우.
 
 ## VSH-0014 — Start Window for the Workbench New Window Action
 
@@ -198,21 +234,21 @@ What shipping it means:
 
 ## VSH-0005 — VShoon Extension Build Registration
 
-- 목적: VShoon bundled 계약 샘플과 병합한 네 확장(DBConn, Decom, VSsh, VSearch)을 upstream의 built-in
+- 목적: VShoon bundled 계약 샘플과 병합한 네 확장(DBConn, Decom, VSsh, VSearch), Spring 실행 확장, 터미널 PATH에 `vshoon` 명령을 넣는 시작 확장을 upstream의 built-in
   extension compile/watch 작업에 포함한다.
 - 수정한 upstream 파일: `build/gulpfile.extensions.ts`.
 - 이유: upstream은 시작 시간을 줄이기 위해 extension `tsconfig.json` 경로를 정적 배열로
   관리하므로 overlay 디렉터리만 추가해서는 gulp compile task가 만들어지지 않는다.
 - 의존성: `extensions/vshoon-ui-sample`, `extensions/vshoon-dbconn`, `extensions/vshoon-decom`, `extensions/vshoon-vssh`,
-  `extensions/vshoon-vsearch`의 `tsconfig.json`과 upstream extension gulp task 생성기.
-- 충돌 위험도: 낮음. 정적 compile 목록에 다섯 항목을 추가한다.
+  `extensions/vshoon-vsearch`, `extensions/vshoon-spring`, `extensions/vshoon-start`의 `tsconfig.json`과 upstream extension gulp task 생성기.
+- 충돌 위험도: 낮음. 정적 compile 목록에 일곱 항목을 추가한다.
 - 검증: 각 VShoon extension의 대상 compile task와 전체 `compile-extensions`.
 - 제거 조건: upstream이 overlay extension을 자동 탐색하거나 VShoon이 별도 extension 빌드
   파이프라인을 소유하게 되는 경우.
 
 ## VSH-0010 — Bundled Modal Webviews and Bundled Extension Dependencies
 
-- 목적: 권한을 받은 bundled extension의 특정 웹뷰만 upstream Workbench 모달 편집기로 열고,
+- 목적: 권한을 받은 bundled extension의 특정 웹뷰를 upstream Workbench 모달 또는 보조 데스크톱 창으로 열고,
   병합한 네 확장이 사용하는 서드파티 의존성을 built-in extension 공유 의존성으로 제공한다.
 - 수정한 upstream 파일: `src/vs/workbench/api/browser/mainThreadWebviewPanels.ts`,
   `src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts`,
@@ -226,7 +262,7 @@ What shipping it means:
   `ppk-to-openssh`, VSearch 미리보기가 쓰는 `monaco-editor`)은 extension host에서 런타임 로드되거나
   빌드 시 media로 staging 되므로 재현 가능한 공유 dependency lock이 필요하다. `ppk-to-openssh`는
   GPL-3.0이며 배포 조건은 [licensing.md](licensing.md)가 기록한다.
-- 의존 symbol/service: `MainThreadWebviewPanels`, `IWebviewWorkbenchService`, `MODAL_GROUP`, upstream
+- 의존 symbol/service: `MainThreadWebviewPanels`, `IWebviewWorkbenchService`, `MODAL_GROUP`, `AUX_WINDOW_GROUP`, upstream
   `ModalEditorPart`, VShoon 소유 `vshoonModalWebviewRegistry`.
 - 신뢰 경계: extension point가 bundled source만 허용하고 extension id와 view type을 함께 매칭한다.
   크기는 정수 `400×300` 이상 `2400×1600` 이하로 제한하고 Workbench가 실제 가용 영역으로 다시
@@ -235,9 +271,11 @@ What shipping it means:
   재검토가 필요하다.
 - 테스트: modal registry 및 extension-point 단위 테스트, DBConn·VSearch 단위 테스트,
   전체 client typecheck와 built-in extension build, `sync:check`. `npm run smoke:modal-webviews`가
-  실제 빌드에서 세 확장의 명령을 각각 실행해, 패널이 `role="dialog"`와 `aria-modal`을 가진 모달로
+  실제 빌드에서 DBConn·VSsh 명령을 각각 실행해, 패널이 `role="dialog"`와 `aria-modal`을 가진 모달로
   열리고 웹뷰가 그 모달 안에 배치되며 편집기 탭으로는 열리지 않는지 확인한다. 선언한 view type을
   어긋나게 두면 이 smoke test가 모달을 기다리다 실패하므로, 검사가 seam 자체를 보고 있음을 확인했다.
+  `npm run smoke:java-search`는 VSearch 팝업의 머리글을 실제로 끌어 웹뷰와 함께 창 경계 밖으로
+  넘어가고 머리글은 창 안에 남는지 검증한다. registry 테스트는 `presentation: 'window'`와 잘못된 값의 거부를 검사한다.
 - 제거 가능 조건: upstream Extension API가 권한·fallback을 갖춘 modal webview target을 공식 지원하는 경우.
 
 2026-09-07: `ModalEditorPart`의 active editor 전환과 disposable 수명주기에
@@ -247,6 +285,18 @@ VShoon 모듈이 담당하고 화면 경계 제한은 upstream layout을 재사�
 창 메모리에서 extension id + view type별로 보관하며 창 종료/새로고침 시 초기화된다.
 추가 검증은 layout snapshot 단위 테스트와 `npm run smoke:modal-webviews -- --remember-layout`이다.
 후자는 세 패널을 각각 크기 변경·이동한 뒤 닫고 다시 열어, 남긴 geometry 그대로 복원되는지 확인한다.
+
+2026-11-04 후속: VSearch는 `presentation: 'window'`를 선언해 `AUX_WINDOW_GROUP`으로 직접 연다.
+표준 API에서 auxiliary target을 지정할 수 없으므로 기존 생성 seam에 위임만 추가했다. 옵션은 검증된
+크기와 고정된 compact 모드뿐이며 임의 창 옵션을 확장에 노출하지 않는다. 다시 표시할 때는 해당 웹뷰의
+기존 그룹을 사용해 다른 편집기나 새 보조 창으로 옮기지 않는다. DBConn·VSsh의 모달 동작은 유지한다.
+
+2026-11-04 재점검: 사용자 요청으로 VSearch를 다시 모달 팝업으로 연다(`presentation` 선언 제거).
+`presentation: 'window'` 경로는 capability로 유지한다. `ModalEditorPart`의 머리글 끌기, 크기 조절과
+재배치 clamp가 `VShoonModalWebviewLayout.positionBounds()`를 먼저 묻도록 했다. 선언된 번들 패널이면
+창 경계를 넘어 잘린 채 배치될 수 있고 머리글 160×48px는 창 안, 제목 표시줄 아래에 남는다.
+일반 모달 편집기는 `undefined`를 받아 upstream clamp를 그대로 사용한다. `VShoonModalWebviewLayout`
+생성 위치를 끌기 처리기 앞으로 옮겨 첫 layout 전에 준비되게 했다.
 
 ## VSH-0006 — Windows Product Metadata and Packaging
 
@@ -294,13 +344,14 @@ VShoon 모듈이 담당하고 화면 경계 제한은 upstream layout을 재사�
 
 ## VSH-0015 — 시작 창의 프로젝트를 새 IDE 창으로 열기
 
-- 목적: 시작 창에서 선택한 프로젝트가 기존 IDE 창을 재사용하지 않도록 한다. 같은 프로젝트가 열려 있어도 별도 창을 만든다.
-- upstream 파일: `src/vs/platform/windows/electron-main/windows.ts`, `src/vs/platform/windows/electron-main/windowsMainService.ts`.
-- 수정 이유: `forceNewWindow`만으로는 이미 열린 폴더/워크스페이스의 중복 제거를 우회할 수 없다. 제품 모듈에서 창을 직접 만들면 upstream 창 수명주기와 프로필 처리를 우회하게 된다.
-- 의존 symbol/service: `IOpenConfiguration`, `IWindowsMainService.open`, `findWindowOnWorkspaceOrFolder`.
-- 동작: `forceNewWindow`와 내부 옵션 `vshoonNewProjectWindow`가 모두 참일 때만 기존 프로젝트 창 검색을 건너뛴다. 옵션은 시작 창에서만 전달한다.
-- 충돌 위험도: 낮음. 선택 필드 하나와 폴더/워크스페이스의 기존 창 검색 조건 두 곳.
-- 테스트: `npm run smoke:start-window`에서 창 재사용 설정을 켠 상태로 이미 열린 프로젝트를 선택해 별도 Workbench가 생기는지 검사한다. CLI 직접 실행과 기존 빈 창 유지도 검사한다.
+- 목적: 같은 프로젝트가 열려 있어도 별도 창을 만들고, 시작 창에서 여는 Workbench를 시작 창과 같은 모니터에 배치한다.
+- upstream 파일: `src/vs/platform/windows/electron-main/windows.ts`, `src/vs/platform/windows/electron-main/windowsMainService.ts`, `src/vs/platform/windows/electron-main/windowsStateHandler.ts`.
+- 수정 이유: 프로젝트 중복 처리와 새 창의 초기 위치는 창을 생성하기 전에 upstream 창 서비스가 결정한다.
+- 의존 symbol/service: `IOpenConfiguration`, `IWindowsMainService.open`, `IWindowsMainService.openEmptyWindow`, `findWindowOnWorkspaceOrFolder`, `WindowsStateHandler.getNewWindowState`.
+- 동작: `forceNewWindow`와 `vshoonNewProjectWindow`를 함께 전달하면 기존 프로젝트 창 검색을 건너뛴다. `vshoonDisplayId`를 전달하면 창 상태의 표시 모드를 유지하고 해당 모니터의 작업 영역에 배치한다.
+- 충돌 위험도: 낮음. 내부 열기 옵션과 프로젝트 중복 판정, 새 창 상태 계산에 한정한다.
+- 테스트: `npm run smoke:start-window`에서 기존 프로젝트의 새 창 생성, 시작 창과 Workbench 사이의 모니터 전달, CLI 직접 실행을 검사한다. 보조 모니터의 좌표를 `-- --secondary-display x,y`로 넘기면 Workbench를 해당 모니터로 옮겨 시작 창을 열고, 다시 시작 창의 위치를 바꿔 선택한 프로젝트가 같은 모니터를 따르는지 확인한다.
+- 제거 가능 조건: upstream이 이미 열린 프로젝트의 새 창 생성과 새 창의 대상 모니터 지정을 지원하는 경우.
 
 ## VSH-0016 — 기본 Explorer의 인라인 JAR 탐색
 

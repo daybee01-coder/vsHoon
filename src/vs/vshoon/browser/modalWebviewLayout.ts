@@ -10,6 +10,18 @@ import { vshoonModalWebviewRegistry } from './uiExtensionPoint.js';
 // Renderer memory only: closing/reloading the Workbench discards these values.
 const layouts = new VShoonModalWebviewLayouts();
 
+// Part of a popup dragged past a window edge that stays visible: enough of the header to grab it.
+const minimumVisibleWidth = 160;
+const minimumVisibleHeight = 48;
+
+/** Allowed range for the top-left corner of a bundled popup, in window coordinates. */
+export interface IVShoonModalWebviewPositionBounds {
+	readonly minLeft: number;
+	readonly maxLeft: number;
+	readonly minTop: number;
+	readonly maxTop: number;
+}
+
 interface IMutableModalLayout {
 	size: IVShoonModalWebviewLayout['size'];
 	position: IVShoonModalWebviewLayout['position'];
@@ -32,7 +44,8 @@ export class VShoonModalWebviewLayout implements IDisposable {
 	activate(identity: { source: string; viewType: string } | undefined): void {
 		const source = identity?.source;
 		const viewType = identity?.viewType;
-		const contribution = source && viewType ? vshoonModalWebviewRegistry.getModalWebview(source, viewType) : undefined;
+		const declaration = source && viewType ? vshoonModalWebviewRegistry.getModalWebview(source, viewType) : undefined;
+		const contribution = declaration?.presentation === 'window' ? undefined : declaration;
 		if (this.current?.source === source && this.current?.viewType === viewType) {
 			return;
 		}
@@ -52,6 +65,24 @@ export class VShoonModalWebviewLayout implements IDisposable {
 				this.part.toggleMaximized();
 			}
 		}
+	}
+
+	/**
+	 * Bounds for the top-left corner of the active bundled panel. Unlike ordinary modal editors, a
+	 * bundled popup may be dragged past the window edges and is clipped there, while enough of its
+	 * header stays inside the window to drag it back. Returns `undefined` for other editors.
+	 */
+	positionBounds(container: { readonly width: number; readonly height: number }, titleBarOffset: number, width: number): IVShoonModalWebviewPositionBounds | undefined {
+		if (!this.current) {
+			return undefined;
+		}
+		const visibleWidth = Math.min(width, minimumVisibleWidth);
+		return {
+			minLeft: visibleWidth - width,
+			maxLeft: Math.max(0, container.width - visibleWidth),
+			minTop: titleBarOffset,
+			maxTop: Math.max(titleBarOffset, container.height - minimumVisibleHeight)
+		};
 	}
 
 	private snapshot(): IVShoonModalWebviewLayout {

@@ -12,7 +12,7 @@
  *
  * 선택은 브라우저의 텍스트 선택이 아니라 **셀 블록** 모델이다. 그래야
  * 행 번호 클릭 → 그 행 전체, Ctrl+A → 결과 행 전체처럼 표 도구다운 동작이
- * 가능하고, 복사한 내용이 행·열 구조를 유지한 채(TSV) 붙여넣어진다.
+ * 가능하고, 복사한 내용이 행·열 구조를 유지한 채 붙여넣어진다.
  *
  * 편집은 확장이 편집 가능하다고 알려준 컬럼에서만 열린다. 웹뷰의 판단은
  * 확장 쪽에서 한 번 더 검증되므로, 여기 UI 는 편의를 위한 1차 필터일 뿐이다.
@@ -59,11 +59,18 @@
   const pageInfoEl = /** @type {HTMLElement} */ (document.getElementById('pageinfo'));
   const rowLimitEl = /** @type {HTMLSelectElement} */ (document.getElementById('rowlimit'));
   const rowLimitLabel = /** @type {HTMLElement} */ (document.getElementById('rowlimit-label'));
+  const copyControls = /** @type {HTMLElement} */ (document.getElementById('copy-controls'));
+  const copySeparator = /** @type {HTMLSelectElement} */ (document.getElementById('copy-separator'));
+  const btnCopy = /** @type {HTMLButtonElement} */ (document.getElementById('btn-copy'));
+  const copyDelimiters = new Map([['tab', '\t'], ['comma', ','], ['semicolon', ';'], ['pipe', '|']]);
+  const savedCopySeparator = vscode.getState()?.copySeparator;
+  copySeparator.value = copyDelimiters.has(savedCopySeparator) ? savedCopySeparator : 'tab';
+  copySeparator.addEventListener('change', () => vscode.setState({ ...vscode.getState(), copySeparator: copySeparator.value }));
+  btnCopy.addEventListener('click', event => grid?.copySelection(event.shiftKey));
 
   /** 행 제한 선택 상자에 늘 있는 값들. 지금 설정이 여기 없으면 그 값도 끼워 넣는다. */
   const ROW_LIMIT_CHOICES = [100, 200, 500, 1000, 5000, 10000, 50000];
-  /** 바닥에서 이만큼(px) 안에 들어오면 다음 묶음을 미리 부른다. */
-  const LOAD_MORE_MARGIN = 200;
+  const LOAD_MORE_SCROLL_RATIO = 0.7;
 
   /** @type {any[]} */
   let tabs = [];
@@ -78,7 +85,7 @@
   /**
    * 탭별 화면 상태(정렬·선택). 결과가 다시 전달돼도 유지되어야 한다 —
    * 셀 하나를 고쳤다고 정렬이 풀리거나 선택이 사라지면 작업 흐름이 끊긴다.
-   * @type {Map<string, {sort: {col: number, dir: 'asc'|'desc'} | null, ranges: any[], anchor: any, focus: any, widths: number[] | null}>}
+   * @type {Map<string, {sort: {col: number, dir: 'asc'|'desc'} | null, ranges: any[], anchor: any, focus: any, widths: number[] | null, scrollTop: number, scrollLeft: number, lastOffset: number}>}
    */
   const viewState = new Map();
 
@@ -94,6 +101,7 @@
         // 스크롤 위치는 결과가 다시 전달돼도 유지한다 — 이어 조회로 행이 늘어날
         // 때마다 맨 위로 튕기면 스크롤 자체를 이어갈 수 없다.
         scrollTop: 0,
+        scrollLeft: 0,
         lastOffset: -1,
       };
       viewState.set(id, state);
@@ -123,6 +131,12 @@
     for (const id of [...viewState.keys()]) {
       if (!alive.has(id)) {
         viewState.delete(id);
+      }
+    }
+    if (message.selectAllId) {
+      const tab = tabs.find((candidate) => candidate.id === message.selectAllId);
+      if (tab) {
+        selectAllRows(stateFor(tab.id), tab.rows?.length ?? 0, tab.columns?.length ?? 0);
       }
     }
     render();
@@ -244,11 +258,14 @@
 
     const hasRows =
       tab.state === 'done' && Array.isArray(tab.rows) && (tab.columns || []).length > 0;
-    btnCsv.disabled = !hasRows;
-    btnJson.disabled = !hasRows;
-    btnDelete.disabled = !hasRows || !tab.edit;
+    const loadingAll = tab.page?.loadingAll === true;
+    copyControls.hidden = !hasRows;
+    btnCopy.disabled = loadingAll;
+    btnCsv.disabled = !hasRows || loadingAll;
+    btnJson.disabled = !hasRows || loadingAll;
+    btnDelete.disabled = !hasRows || !tab.edit || loadingAll;
     btnDelete.style.display = tab.edit ? '' : 'none';
-    btnInsert.disabled = !hasRows || !tab.edit;
+    btnInsert.disabled = !hasRows || !tab.edit || loadingAll;
     btnInsert.style.display = tab.edit ? '' : 'none';
 
     // 운영/스테이징이면 연결 이름 앞에 꼬리표를 붙인다.
@@ -310,6 +327,7 @@
     btnMore.style.display = isPaged && page.hasMore ? '' : 'none';
     pageInfoEl.textContent = '';
     renderRowLimit();
+    rowLimitEl.disabled = !!page?.loadingAll;
 
     if (!isPaged) {
       return;
@@ -318,19 +336,21 @@
     const loaded = Array.isArray(tab.rows) ? tab.rows.length : 0;
     const start = loaded === 0 ? page.offset : page.offset + 1;
     const end = page.offset + loaded;
-    const busy = tab.state === 'running' || page.loadingMore;
+    const busy = tab.state === 'running' || page.loadingMore || page.loadingAll;
 
     btnPrev.disabled = page.offset === 0 || busy;
     btnNext.disabled = !page.hasMore || busy;
     btnMore.disabled = busy;
-    btnMore.textContent = page.loadingMore ? '불러오는 중…' : '더 불러오기';
+    btnMore.textContent = page.loadingMore || page.loadingAll ? '불러오는 중…' : '더 불러오기';
 
     const parts = [
       loaded === 0 && page.offset > 0
         ? '이 쪽에는 행이 없습니다'
         : `${start.toLocaleString()}–${end.toLocaleString()}행`,
     ];
-    if (page.loadingMore) {
+    if (page.loadingAll) {
+      parts.push(document.body.dataset.loadingAllLabel);
+    } else if (page.loadingMore) {
       parts.push('이어서 불러오는 중…');
     } else if (page.hasMore) {
       parts.push(page.autoPaused ? '이후 더 있음 (자동 조회 멈춤)' : '이후 더 있음');
@@ -339,9 +359,7 @@
       parts.push(`서버 정렬 ${page.sort.dir === 'desc' ? '내림차순' : '오름차순'}`);
     }
     pageInfoEl.textContent = parts.join(' · ');
-    pageInfoEl.title =
-      '서버에서 한 쪽씩 가져옵니다. 아래로 끝까지 스크롤하면 다음 묶음을 이어서 불러옵니다.\n' +
-      '원본 쿼리에 ORDER BY 가 없으면 쪽 사이 행 순서는 보장되지 않습니다.';
+    pageInfoEl.title = document.body.dataset.pagingHelp;
   }
 
   /** 행 제한 선택 상자를 현재 설정에 맞춘다. */
@@ -368,6 +386,7 @@
   }
 
   function renderContent(tab) {
+    const restoreGridFocus = grid?.hasFocus() && grid.tabId === tab?.id;
     if (grid) {
       grid.dispose();
       grid = null;
@@ -420,6 +439,9 @@
     }
 
     grid = buildGrid(tab);
+    if (restoreGridFocus) {
+      grid.focus();
+    }
   }
 
   function placeholder(text) {
@@ -434,11 +456,11 @@
   function buildGrid(tab) {
     const columns = tab.columns;
     const rows = tab.rows || [];
-    const edit = tab.edit || null;
+    const page = tab.page || null;
+    const edit = page?.loadingAll ? null : tab.edit || null;
     const editableCols = new Set(edit ? edit.columns : []);
     const keyCols = new Set(edit ? edit.keyColumns : []);
     const state = stateFor(tab.id);
-    const page = tab.page || null;
     /**
      * 화면에 결과 전체가 있으면 즉시 정렬하고, 잘렸거나 다른 쪽을 보고 있으면
      * 서버에 맡긴다 — 가져온 1000행 안에서만 정렬하면 "전체가 정렬됐다"는
@@ -475,8 +497,11 @@
     headerRow.style.width = totalWidth + 'px';
 
     const corner = makeCell('', rowNumWidth, 'header rownum corner');
-    corner.title = '전체 선택 (Ctrl+A)';
-    corner.addEventListener('click', () => selectAll());
+    corner.title = document.body.dataset.selectAllLabel;
+    corner.addEventListener('click', () => {
+      body.focus({ preventScroll: true });
+      selectAll();
+    });
     headerRow.appendChild(corner);
 
     columns.forEach((column, i) => {
@@ -584,21 +609,35 @@
     function makeResizer(index) {
       const handle = document.createElement('div');
       handle.className = 'col-resizer';
-      handle.title = '드래그: 너비 조절 · 더블클릭: 내용에 맞춤';
-      handle.addEventListener('mousedown', (event) => {
-        if (event.button !== 0) {
+      handle.title = document.body.dataset.resizeColumnLabel;
+      handle.tabIndex = 0;
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      handle.setAttribute('aria-label', columns[index].name);
+      handle.setAttribute('aria-valuemin', String(MIN_MANUAL_WIDTH));
+      handle.setAttribute('aria-valuemax', String(MAX_MANUAL_WIDTH));
+      handle.setAttribute('aria-valuenow', String(widths[index]));
+      handle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || !event.isPrimary) {
           return;
         }
-        // 헤더의 정렬 클릭과 본문의 블록 선택으로 새어 나가지 않게 막는다.
         event.preventDefault();
-        event.stopPropagation();
+        handle.setPointerCapture(event.pointerId);
         beginResize(index, event.clientX);
+      });
+      handle.addEventListener('pointermove', onResizeMove);
+      handle.addEventListener('lostpointercapture', onResizeEnd);
+      handle.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          event.stopPropagation();
+          setColumnWidth(index, widths[index] + (event.key === 'ArrowLeft' ? -10 : 10));
+        }
       });
       handle.addEventListener('dblclick', (event) => {
         event.preventDefault();
         event.stopPropagation();
         setColumnWidth(index, measured[index]);
-        state.widths = widths.slice();
       });
       handle.addEventListener('click', (event) => event.stopPropagation());
       return handle;
@@ -614,15 +653,9 @@
     }
 
     function onResizeMove(event) {
-      if (!resizing) {
+      if (!resizing || !event.currentTarget.hasPointerCapture(event.pointerId)) {
         return;
       }
-      // 웹뷰 밖에서 버튼을 놓으면 mouseup 이 오지 않는다 — 다음 이동에서 정리한다.
-      if (event.buttons === 0) {
-        onResizeEnd();
-        return;
-      }
-      event.preventDefault();
       const next = resizing.startWidth + (event.clientX - resizing.startX);
       setColumnWidth(resizing.index, next);
     }
@@ -637,8 +670,6 @@
       }
       resizing = null;
       gridEl.classList.remove('resizing');
-      // 조절한 너비는 탭에 남겨 다시 그려도 유지되게 한다.
-      state.widths = widths.slice();
       // 손잡이에서 손을 뗀 직후의 click 은 정렬로 해석하지 않는다.
       sortBlockedUntil = Date.now() + 200;
     }
@@ -655,6 +686,7 @@
         return;
       }
       widths[index] = clamped;
+      state.widths = widths.slice();
       totalWidth = widths.reduce((sum, w) => sum + w, rowNumWidth);
 
       const px = clamped + 'px';
@@ -666,6 +698,7 @@
       const headerCell = headerRow.children[index + 1];
       if (headerCell instanceof HTMLElement) {
         headerCell.style.width = px;
+        headerCell.querySelector('.col-resizer')?.setAttribute('aria-valuenow', String(clamped));
       }
       for (const rowEl of viewport.children) {
         if (!(rowEl instanceof HTMLElement)) {
@@ -779,14 +812,15 @@
       updateSelectionInfo();
     }
 
-    /** Ctrl+A — 조회 결과 행만 전부. 탭 바나 툴바 글자는 잡히지 않는다. */
     function selectAll() {
-      if (rows.length === 0 || columns.length === 0) {
+      if (page?.loadingAll) {
         return;
       }
-      state.ranges = [{ top: 0, left: 0, bottom: rows.length - 1, right: columns.length - 1 }];
-      state.anchor = { row: 0, col: 0 };
-      state.focus = state.focus ?? { row: 0, col: 0 };
+      if (page?.hasMore) {
+        vscode.postMessage({ type: 'page', id: tab.id, direction: 'all' });
+        return;
+      }
+      selectAllRows(state, rows.length, columns.length);
       paint(true);
       updateSelectionInfo();
     }
@@ -1207,49 +1241,36 @@
 
     // ── 복사 ───────────────────────────────────────────────────────────────
 
-    /**
-     * 선택 블록을 TSV 로 만든다.
-     * 행은 줄바꿈, 열은 탭으로 — 그대로 붙여 넣으면 블록 구조가 유지된다.
-     * 값 안의 탭·줄바꿈은 공백으로 바꾼다. 그러지 않으면 한 셀이 여러 줄로
-     * 쪼개져 표가 어긋난다.
-     */
-    function selectionToTsv(withHeaders) {
-      if (state.ranges.length === 0) {
-        return toTsv(columns, order.map((i) => rows[i]));
+    function copySelection(withHeaders) {
+      if (page?.loadingAll) {
+        return;
       }
-      let top = Infinity;
-      let bottom = -Infinity;
-      let left = Infinity;
-      let right = -Infinity;
-      for (const range of state.ranges) {
-        top = Math.min(top, range.top);
-        bottom = Math.max(bottom, range.bottom);
-        left = Math.min(left, range.left);
-        right = Math.max(right, range.right);
-      }
+      const delimiter = copyDelimiters.get(copySeparator.value) ?? '\t';
+      const hasSelection = state.ranges.length > 0;
+      const { top, bottom, left, right } = hasSelection
+        ? state.ranges.reduce((bounds, range) => ({
+            top: Math.min(bounds.top, range.top),
+            bottom: Math.max(bounds.bottom, range.bottom),
+            left: Math.min(bounds.left, range.left),
+            right: Math.max(bounds.right, range.right),
+          }))
+        : { top: 0, bottom: rows.length - 1, left: 0, right: columns.length - 1 };
 
       const lines = [];
-      if (withHeaders) {
-        const head = [];
-        for (let c = left; c <= right; c++) {
-          head.push(columns[c].name);
-        }
-        lines.push(head.join('\t'));
+      if (withHeaders || !hasSelection) {
+        lines.push(columns.slice(left, right + 1).map(column => formatCell(column.name, delimiter)).join(delimiter));
       }
       for (let r = top; r <= bottom; r++) {
         const row = rows[order[r]];
         const line = [];
         for (let c = left; c <= right; c++) {
           // 떨어져 있는 블록을 함께 복사하면 사이는 빈 칸으로 채운다.
-          line.push(isSelected(r, c) ? formatCell(row ? row[c] : null) : '');
+          line.push(!hasSelection || isSelected(r, c) ? formatCell(row?.[c], delimiter) : '');
         }
-        lines.push(line.join('\t'));
+        lines.push(line.join(delimiter));
       }
-      return lines.join('\n');
-    }
 
-    function copySelection(withHeaders) {
-      const text = selectionToTsv(withHeaders);
+      const text = lines.join('\n');
       if (text.length > 0) {
         vscode.postMessage({ type: 'copy', text });
       }
@@ -1258,15 +1279,19 @@
     // ── 이벤트 ─────────────────────────────────────────────────────────────
 
     function onScroll() {
+      const scrolledDown = body.scrollTop > state.scrollTop;
       header.scrollLeft = body.scrollLeft;
       draftScroll.scrollLeft = body.scrollLeft;
       state.scrollTop = body.scrollTop;
+      state.scrollLeft = body.scrollLeft;
       paint(false);
-      maybeLoadMore();
+      if (scrolledDown) {
+        maybeLoadMore();
+      }
     }
 
     /**
-     * 바닥에 닿으면 다음 묶음을 이어서 부른다.
+     * 아래로 이동해 전체 스크롤 거리의 70%에 이르면 다음 묶음을 부른다.
      *
      * 처음 그릴 때는 부르지 않는다 — 행이 적어 화면을 못 채운 결과에서 스크롤도
      * 하기 전에 연쇄 조회가 시작되면, 제한을 걸어 둔 의미가 사라진다.
@@ -1276,11 +1301,11 @@
       if (!autoLoadMore || requestedMore || !page || !page.hasMore) {
         return;
       }
-      if (page.loadingMore || page.autoPaused || tab.state === 'running') {
+      if (page.loadingMore || page.loadingAll || page.autoPaused || tab.state === 'running') {
         return;
       }
-      const remaining = body.scrollHeight - body.scrollTop - body.clientHeight;
-      if (remaining > LOAD_MORE_MARGIN) {
+      const scrollRange = body.scrollHeight - body.clientHeight;
+      if (scrollRange <= 0 || body.scrollTop < scrollRange * LOAD_MORE_SCROLL_RATIO) {
         return;
       }
       requestedMore = true;
@@ -1386,21 +1411,23 @@
     }
 
     function onKeyDown(event) {
-      if (editingInput) {
+      if (editingInput || (event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || event.target.matches('input, textarea, select')))) {
         return; // 편집 중에는 input 이 키를 처리한다.
       }
       const ctrl = event.ctrlKey || event.metaKey;
 
-      // Ctrl+A — 결과 행 전체 선택. 브라우저 기본 동작(문서 전체 선택)은 막는다.
-      if (ctrl && event.key.toLowerCase() === 'a') {
+      if (ctrl && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a' && !event.isComposing) {
         event.preventDefault();
+        event.stopPropagation();
         selectAll();
         return;
       }
 
-      // Ctrl+C — 선택 블록을 TSV 로. Shift 를 같이 누르면 헤더도 포함한다.
-      if (ctrl && event.key.toLowerCase() === 'c') {
+      // Ctrl+C는 선택한 구분자를 사용한다. Shift를 같이 누르면 헤더도 포함한다.
+      if (ctrl && !event.altKey && event.key.toLowerCase() === 'c') {
         event.preventDefault();
+        event.stopPropagation();
         copySelection(event.shiftKey);
         return;
       }
@@ -1502,8 +1529,6 @@
     body.addEventListener('mousedown', onMouseDown);
     body.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('mousemove', onResizeMove);
-    window.addEventListener('mouseup', onResizeEnd);
     document.addEventListener('keydown', onKeyDown);
     const resizeObserver = new ResizeObserver(() => paint(true));
     resizeObserver.observe(body);
@@ -1513,15 +1538,21 @@
     const pageOffset = page ? page.offset : 0;
     if (state.lastOffset === pageOffset) {
       body.scrollTop = state.scrollTop || 0;
-    } else {
-      state.scrollTop = 0;
     }
+    state.scrollTop = body.scrollTop;
     state.lastOffset = pageOffset;
+    body.scrollLeft = state.scrollLeft;
+    header.scrollLeft = body.scrollLeft;
+    draftScroll.scrollLeft = body.scrollLeft;
 
     paint(true);
     updateSelectionInfo();
 
     return {
+      tabId: tab.id,
+      hasFocus: () => document.activeElement === body,
+      focus: () => body.focus({ preventScroll: true }),
+      copySelection,
       deleteSelectedRow,
       toggleDraft,
       dispose() {
@@ -1529,8 +1560,6 @@
         body.removeEventListener('mousedown', onMouseDown);
         body.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('mouseup', onMouseUp);
-        window.removeEventListener('mousemove', onResizeMove);
-        window.removeEventListener('mouseup', onResizeEnd);
         document.removeEventListener('keydown', onKeyDown);
         resizeObserver.disconnect();
       },
@@ -1538,6 +1567,15 @@
   }
 
   // ── 헬퍼 ─────────────────────────────────────────────────────────────────
+
+  function selectAllRows(state, rowCount, columnCount) {
+    if (rowCount === 0 || columnCount === 0) {
+      return;
+    }
+    state.ranges = [{ top: 0, left: 0, bottom: rowCount - 1, right: columnCount - 1 }];
+    state.anchor = { row: 0, col: 0 };
+    state.focus = state.focus ?? { row: 0, col: 0 };
+  }
 
   /** JSON 으로 읽히면 들여쓴 문자열을, 아니면 undefined. */
   function prettyJson(text) {
@@ -1667,18 +1705,11 @@
     });
   }
 
-  function formatCell(value) {
-    return value === null || value === undefined
-      ? ''
-      : String(value).replace(/[\t\r\n]/g, ' ');
-  }
-
-  /** 스프레드시트에 그대로 붙여 넣을 수 있는 TSV. */
-  function toTsv(columns, rows) {
-    const lines = [columns.map((c) => c.name).join('\t')];
-    for (const row of rows) {
-      lines.push((row || []).map((v) => formatCell(v)).join('\t'));
+  function formatCell(value, delimiter) {
+    const text = value == null ? '' : String(value);
+    if (delimiter === '\t') {
+      return text.replace(/[\t\r\n]/g, ' ');
     }
-    return lines.join('\n');
+    return text.includes(delimiter) || /["\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
   }
 })();

@@ -21,15 +21,16 @@ export class SearchPanel {
   private static current: SearchPanel | undefined;
 
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly engine = new SearchEngine();
   private searchTokenSource: vscode.CancellationTokenSource | undefined;
   private replaceTokenSource: vscode.CancellationTokenSource | undefined;
   private webviewReady = false;
+  private disposed = false;
   private pendingOptions: OpenOptions | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
-    private readonly context: vscode.ExtensionContext
+    private readonly context: vscode.ExtensionContext,
+    private readonly engine: SearchEngine
   ) {
     this.panel.webview.html = this.buildHtml();
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -42,7 +43,9 @@ export class SearchPanel {
     );
   }
 
-  static createOrShow(context: vscode.ExtensionContext, options: OpenOptions = {}): void {
+  static createOrShow(context: vscode.ExtensionContext, engine: SearchEngine, options: OpenOptions = {}): void {
+    // 입력을 기다리는 동안 파일 목록과 보관 중인 내용을 백그라운드에서 다시 확인한다.
+    engine.prepare();
     if (SearchPanel.current) {
       // 인자 없이 reveal 해야 지금 있는 자리(모달)에서 앞으로 나온다.
       // 컬럼을 지정하면 모달에 있던 패널이 일반 편집기 그룹으로 끌려온다.
@@ -56,12 +59,12 @@ export class SearchPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
     });
-    SearchPanel.current = new SearchPanel(panel, context);
+    SearchPanel.current = new SearchPanel(panel, context, engine);
     SearchPanel.current.pendingOptions = options;
   }
 
-  static revive(panel: vscode.WebviewPanel, context: vscode.ExtensionContext): void {
-    SearchPanel.current = new SearchPanel(panel, context);
+  static revive(panel: vscode.WebviewPanel, context: vscode.ExtensionContext, engine: SearchEngine): void {
+    SearchPanel.current = new SearchPanel(panel, context, engine);
   }
 
   private applyOptions(options: OpenOptions): void {
@@ -81,7 +84,10 @@ export class SearchPanel {
   }
 
   private post(message: ToWebviewMessage): void {
-    void this.panel.webview.postMessage(message);
+    // 닫는 중에 끝난 검색이나 미리보기 응답은 버린다.
+    if (!this.disposed) {
+      void this.panel.webview.postMessage(message);
+    }
   }
 
   private async handleMessage(message: ToExtensionMessage): Promise<void> {
@@ -104,10 +110,6 @@ export class SearchPanel {
             this.applyOptions(this.pendingOptions);
             this.pendingOptions = undefined;
           }
-          // 창은 항상 워크스페이스 범위로 시작하므로 첫 검색 전에 그 범위를 미리 읽어 둔다.
-          this.engine
-            .warm({ id: 0, query: '', regex: false, caseSensitive: false, wholeWord: false, scopeKind: 'workspace', scopePath: '', recursive: true, fileMask: '' }, getConfig())
-            .catch(() => undefined);
           break;
 
         case 'search':
@@ -385,12 +387,12 @@ export class SearchPanel {
   }
 
   private dispose(): void {
+    this.disposed = true;
     SearchPanel.current = undefined;
     this.searchTokenSource?.cancel();
     this.searchTokenSource?.dispose();
     this.replaceTokenSource?.cancel();
     this.replaceTokenSource?.dispose();
-    this.engine.dispose();
     this.panel.dispose();
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();

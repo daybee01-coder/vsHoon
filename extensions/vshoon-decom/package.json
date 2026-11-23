@@ -13,7 +13,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:decom.resolveExplorerJar"
+	"*",
+    "onCommand:decom.resolveExplorerJar",
+    "onLanguage:java"
   ],
   "main": "./out/extension.js",
   "contributes": {

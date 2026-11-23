@@ -690,7 +690,7 @@ index 60185fa80859..d9c6c9c30d1b 100644
    },
    "overrides": {
 diff --git a/src/vs/workbench/api/browser/mainThreadWebviewPanels.ts b/src/vs/workbench/api/browser/mainThreadWebviewPanels.ts
-index b5821a268af1..286b8bebbfad 100644
+index b5821a268af1..d064bd30088a 100644
 --- a/src/vs/workbench/api/browser/mainThreadWebviewPanels.ts
 +++ b/src/vs/workbench/api/browser/mainThreadWebviewPanels.ts
 @@ -17,12 +17,13 @@ import { WebviewIconPath, WebviewInput } from '../../contrib/webviewPanel/browse
@@ -698,7 +698,7 @@ index b5821a268af1..286b8bebbfad 100644
  import { editorGroupToColumn } from '../../services/editor/common/editorGroupColumn.js';
  import { GroupLocation, GroupsOrder, IEditorGroup, IEditorGroupsService, preferredSideBySideGroupDirection } from '../../services/editor/common/editorGroupsService.js';
 -import { ACTIVE_GROUP, IEditorService, PreferredGroup, SIDE_GROUP } from '../../services/editor/common/editorService.js';
-+import { ACTIVE_GROUP, IEditorService, MODAL_GROUP, PreferredGroup, SIDE_GROUP } from '../../services/editor/common/editorService.js';
++import { ACTIVE_GROUP, AUX_WINDOW_GROUP, IEditorService, MODAL_GROUP, PreferredGroup, SIDE_GROUP } from '../../services/editor/common/editorService.js';
  import { IExtensionService } from '../../services/extensions/common/extensions.js';
  import { IExtHostContext } from '../../services/extensions/common/extHostCustomers.js';
  import * as extHostProtocol from '../common/extHost.protocol.js';
@@ -708,23 +708,25 @@ index b5821a268af1..286b8bebbfad 100644
  
  /**
   * Bi-directional map between webview handles and inputs.
-@@ -84,6 +85,7 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
+@@ -84,6 +85,8 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
  	private readonly _proxy: extHostProtocol.ExtHostWebviewPanelsShape;
  
  	private readonly _webviewInputs = new WebviewInputStore();
 +	private readonly _modalWebviewHandles = new Set<extHostProtocol.WebviewHandle>();
++	private readonly _windowWebviewHandles = new Set<extHostProtocol.WebviewHandle>();
  
  	private readonly _revivers = this._register(new DisposableMap<string>());
  
-@@ -141,6 +143,7 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
+@@ -141,6 +144,8 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
  
  		const disposeSub = input.webview.onDidDispose(() => {
  			disposeSub.dispose();
 +			this._modalWebviewHandles.delete(handle);
++			this._windowWebviewHandles.delete(handle);
  
  			this._proxy.$onDidDisposeWebviewPanel(handle).finally(() => {
  				this._webviewInputs.delete(handle);
-@@ -155,13 +158,22 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
+@@ -155,13 +160,27 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
  		initData: extHostProtocol.IWebviewInitData,
  		showOptions: extHostProtocol.WebviewPanelShowOptions,
  	): void {
@@ -732,14 +734,16 @@ index b5821a268af1..286b8bebbfad 100644
 -		const mainThreadShowOptions: IWebViewShowOptions = showOptions ? {
 +		const extension = reviveWebviewExtension(extensionData);
 +		const modalWebview = vshoonModalWebviewRegistry.getModalWebview(extension.id.value, viewType);
-+		const opensModal = modalWebview !== undefined;
-+		const targetGroup = opensModal ? MODAL_GROUP : this.getTargetGroupFromShowOptions(showOptions);
++		const opensWindow = modalWebview?.presentation === 'window';
++		const opensModal = modalWebview !== undefined && !opensWindow;
++		const targetGroup = opensWindow ? AUX_WINDOW_GROUP : opensModal ? MODAL_GROUP : this.getTargetGroupFromShowOptions(showOptions);
 +		const mainThreadShowOptions: IWebViewShowOptions = {
  			preserveFocus: !!showOptions.preserveFocus,
 -			group: targetGroup
 -		} : {};
 +			group: targetGroup,
-+			modal: modalWebview?.size ? {
++			auxiliary: opensWindow ? { bounds: modalWebview?.size, compact: true } : undefined,
++			modal: opensModal && modalWebview?.size ? {
 +				maximized: false,
 +				size: modalWebview.size
 +			} : undefined
@@ -749,20 +753,26 @@ index b5821a268af1..286b8bebbfad 100644
 +		if (opensModal) {
 +			this._modalWebviewHandles.add(handle);
 +		}
++		if (opensWindow) {
++			this._windowWebviewHandles.add(handle);
++		}
  		const origin = this.webviewOriginStore.getOrigin(viewType, extension.id);
  
  		const webview = this._webviewWorkbenchService.openWebview({
-@@ -201,7 +213,7 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
+@@ -201,7 +220,10 @@ export class MainThreadWebviewPanels extends Disposable implements extHostProtoc
  			return;
  		}
  
 -		const targetGroup = this.getTargetGroupFromShowOptions(showOptions);
-+		const targetGroup = this._modalWebviewHandles.has(handle) ? MODAL_GROUP : this.getTargetGroupFromShowOptions(showOptions);
++		if (this._windowWebviewHandles.has(handle) && webview.group === undefined) {
++			return; // Initial auxiliary-window creation is still in progress.
++		}
++		const targetGroup = this._windowWebviewHandles.has(handle) ? webview.group! : this._modalWebviewHandles.has(handle) ? MODAL_GROUP : this.getTargetGroupFromShowOptions(showOptions);
  		this._webviewWorkbenchService.revealWebview(webview, targetGroup, !!showOptions.preserveFocus);
  	}
  
 diff --git a/src/vs/workbench/browser/parts/editor/modalEditorPart.ts b/src/vs/workbench/browser/parts/editor/modalEditorPart.ts
-index ca467f2902a3..0e767a9a8fa9 100644
+index ca467f2902a3..a3c8c1f3ec2a 100644
 --- a/src/vs/workbench/browser/parts/editor/modalEditorPart.ts
 +++ b/src/vs/workbench/browser/parts/editor/modalEditorPart.ts
 @@ -4,6 +4,7 @@
@@ -781,13 +791,69 @@ index ca467f2902a3..0e767a9a8fa9 100644
  import { ResourceLabel } from '../../labels.js';
  import { IHostService } from '../../../services/host/browser/host.js';
  import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
-@@ -739,11 +741,14 @@ export class ModalEditorPart {
- 		disposables.add(editorPart.onDidChangeMaximized(() => layoutModal()));
- 		disposables.add(editorPart.onDidRequestLayout(() => layoutModal()));
+@@ -473,6 +475,8 @@ export class ModalEditorPart {
+ 			}
+ 		};
  
 +		const vshoonLayout = disposables.add(new VShoonModalWebviewLayout(editorPart));
- 		// Reflect modal-options from the active editor (e.g. compact header)
- 		// as classes on the modal block, and re-layout so dimensions account
++
+ 		// Handle drag on header to move the modal
+ 		const dragMonitor = disposables.add(new GlobalPointerMoveMonitor());
+ 		const dragDisposables = disposables.add(new DisposableStore());
+@@ -519,10 +523,11 @@ export class ModalEditorPart {
+ 				const dialogHeight = resizableElement.size.height;
+ 
+ 				// Clamp to window bounds
+-				const minLeft = 0;
+-				const minTop = titleBarOffset;
+-				const maxLeft = Math.max(minLeft, containerDimension.width - dialogWidth);
+-				const maxTop = Math.max(minTop, containerDimension.height - dialogHeight);
++				const vshoonBounds = vshoonLayout.positionBounds(containerDimension, titleBarOffset, dialogWidth);
++				const minLeft = vshoonBounds?.minLeft ?? 0;
++				const minTop = vshoonBounds?.minTop ?? titleBarOffset;
++				const maxLeft = vshoonBounds?.maxLeft ?? Math.max(minLeft, containerDimension.width - dialogWidth);
++				const maxTop = vshoonBounds?.maxTop ?? Math.max(minTop, containerDimension.height - dialogHeight);
+ 
+ 				let newLeft = Math.max(minLeft, Math.min(maxLeft, startLeft + (moveEvent.clientX - startX)));
+ 				let newTop = Math.max(minTop, Math.min(maxTop, startTop + (moveEvent.clientY - startY)));
+@@ -609,8 +614,10 @@ export class ModalEditorPart {
+ 				let newTop = e.north ? resizeStartTop - deltaHeight : resizeStartTop;
+ 				let newWidth = e.dimension.width;
+ 				let newHeight = e.dimension.height;
++				// A bundled VShoon popup may extend past the window edges; only keep its header below the title bar.
++				const vshoonOverflow = vshoonLayout.positionBounds(containerDimension, titleBarOffset, newWidth) !== undefined;
+ 
+-				if (newLeft < 0) {
++				if (!vshoonOverflow && newLeft < 0) {
+ 					newWidth += newLeft;
+ 					newLeft = 0;
+ 				}
+@@ -618,10 +625,10 @@ export class ModalEditorPart {
+ 					newHeight += newTop - titleBarOffset;
+ 					newTop = titleBarOffset;
+ 				}
+-				if (newLeft + newWidth > containerDimension.width) {
++				if (!vshoonOverflow && newLeft + newWidth > containerDimension.width) {
+ 					newWidth = containerDimension.width - newLeft;
+ 				}
+-				if (newTop + newHeight > containerDimension.height) {
++				if (!vshoonOverflow && newTop + newHeight > containerDimension.height) {
+ 					newHeight = containerDimension.height - newTop;
+ 				}
+ 
+@@ -722,8 +729,9 @@ export class ModalEditorPart {
+ 
+ 			// Position: use custom position if available (clamped to bounds), otherwise center
+ 			if (!editorPart.maximized && editorPart.position) {
+-				const clampedLeft = Math.max(0, Math.min(editorPart.position.left, containerDimension.width - width));
+-				const clampedTop = Math.max(titleBarOffset, Math.min(editorPart.position.top, titleBarOffset + availableHeight - height));
++				const vshoonBounds = vshoonLayout.positionBounds(containerDimension, titleBarOffset, width);
++				const clampedLeft = vshoonBounds ? Math.max(vshoonBounds.minLeft, Math.min(editorPart.position.left, vshoonBounds.maxLeft)) : Math.max(0, Math.min(editorPart.position.left, containerDimension.width - width));
++				const clampedTop = vshoonBounds ? Math.max(vshoonBounds.minTop, Math.min(editorPart.position.top, vshoonBounds.maxTop)) : Math.max(titleBarOffset, Math.min(editorPart.position.top, titleBarOffset + availableHeight - height));
+ 				resizableElement.domNode.style.left = `${clampedLeft}px`;
+ 				resizableElement.domNode.style.top = `${clampedTop}px`;
+ 			} else {
+@@ -744,6 +752,8 @@ export class ModalEditorPart {
  		// for any header size change.
  		disposables.add(Event.runAndSubscribe(modalEditorService.onDidActiveEditorChange, () => {
  			const activeEditor = editorPart.activeGroup.activeEditor;
@@ -797,15 +863,15 @@ index ca467f2902a3..0e767a9a8fa9 100644
  			modalElement.classList.toggle('compact-header', !!editorModalOptions?.compactHeader);
  			layoutModal();
 diff --git a/src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts b/src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts
-index e71eca5e3975..9280b0a6413d 100644
+index e71eca5e3975..94278758e5f5 100644
 --- a/src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts
 +++ b/src/vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService.ts
-@@ -10,21 +10,22 @@ import { isCancellationError } from '../../../../base/common/errors.js';
+@@ -10,21 +10,23 @@ import { isCancellationError } from '../../../../base/common/errors.js';
  import { Emitter, Event } from '../../../../base/common/event.js';
  import { Iterable } from '../../../../base/common/iterator.js';
  import { combinedDisposable, Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 -import { EditorActivation } from '../../../../platform/editor/common/editor.js';
-+import { EditorActivation, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
++import { EditorActivation, IEditorOptions, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
  import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
  import { IThemeService } from '../../../../platform/theme/common/themeService.js';
  import { GroupIdentifier } from '../../../common/editor.js';
@@ -813,24 +879,26 @@ index e71eca5e3975..9280b0a6413d 100644
  import { EditorInput } from '../../../common/editor/editorInput.js';
  import { IEditorGroup, IEditorGroupsService } from '../../../services/editor/common/editorGroupsService.js';
 -import { ACTIVE_GROUP_TYPE, IEditorService, SIDE_GROUP_TYPE } from '../../../services/editor/common/editorService.js';
-+import { ACTIVE_GROUP_TYPE, IEditorService, MODAL_GROUP_TYPE, SIDE_GROUP_TYPE } from '../../../services/editor/common/editorService.js';
++import { ACTIVE_GROUP_TYPE, AUX_WINDOW_GROUP_TYPE, IEditorService, MODAL_GROUP_TYPE, SIDE_GROUP_TYPE } from '../../../services/editor/common/editorService.js';
  import { IOverlayWebview, IWebviewService, WebviewInitInfo } from '../../webview/browser/webview.js';
  import { CONTEXT_ACTIVE_WEBVIEW_PANEL_ID } from './webviewEditor.js';
  import { WebviewIconPath, WebviewInput, WebviewInputInitInfo } from './webviewEditorInput.js';
  
  export interface IWebViewShowOptions {
 -	readonly group?: IEditorGroup | GroupIdentifier | ACTIVE_GROUP_TYPE | SIDE_GROUP_TYPE;
-+	readonly group?: IEditorGroup | GroupIdentifier | ACTIVE_GROUP_TYPE | SIDE_GROUP_TYPE | MODAL_GROUP_TYPE;
++	readonly group?: IEditorGroup | GroupIdentifier | ACTIVE_GROUP_TYPE | SIDE_GROUP_TYPE | MODAL_GROUP_TYPE | AUX_WINDOW_GROUP_TYPE;
++	readonly auxiliary?: IEditorOptions['auxiliary'];
  	readonly preserveFocus?: boolean;
 +	readonly modal?: IModalEditorPartOptions;
  }
  
  export const IWebviewWorkbenchService = createDecorator<IWebviewWorkbenchService>('webviewEditorService');
-@@ -283,6 +284,7 @@ export class WebviewEditorService extends Disposable implements IWebviewWorkbenc
+@@ -283,6 +285,8 @@ export class WebviewEditorService extends Disposable implements IWebviewWorkbenc
  		this._editorService.openEditor(webviewInput, {
  			pinned: true,
  			preserveFocus: showOptions.preserveFocus,
 +			modal: showOptions.modal,
++			auxiliary: showOptions.auxiliary,
  			// preserve pre 1.38 behaviour to not make group active when preserveFocus: true
  			// but make sure to restore the editor to fix https://github.com/microsoft/vscode/issues/79633
  			activation: showOptions.preserveFocus ? EditorActivation.RESTORE : undefined

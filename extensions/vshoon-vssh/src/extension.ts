@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { registerFontSync } from './config/fontSync';
+import { getSettings } from './config/settings';
 import { passwordSecretKey } from './sessions/passwordSecrets';
 import { openSessionFormPanel } from './sessions/sessionFormPanel';
 import { SessionStorage } from './sessions/sessionStorage';
@@ -117,12 +118,22 @@ export function activate(context: vscode.ExtensionContext): void {
         activeSessionManager.reportTerminalDirectory(event.terminal, cwd.path);
       }
     }),
-    terminalManager.onDidChangeConnections(() =>
-      sessionsProvider.setConnectedIds(terminalManager.getConnectedSessionIds())
-    ),
+    terminalManager.onDidChangeConnections(() => {
+      const connectedIds = terminalManager.getConnectedSessionIds();
+      sessionsProvider.setConnectedIds(connectedIds);
+      // 편집기 탭 우클릭의 "SSH 다시 연결"은 SSH 터미널이 하나라도 있을 때만 보인다.
+      void vscode.commands.executeCommand('setContext', 'vssh.hasSshTerminal', connectedIds.size > 0);
+    }),
     sessionsTreeView.onDidChangeSelection(() => setSessionsFocused(true)),
-    sessionsTreeView.onDidChangeVisibility((e) => {
-      if (!e.visible) setSessionsFocused(false);
+    sessionsTreeView.onDidChangeVisibility(async (e) => {
+      if (!e.visible) {
+        setSessionsFocused(false);
+        return;
+      }
+      // 활동 막대에서 VSsh를 고르면 SSH 탭과 함께 하단 SFTP 패널도 보여 준다.
+      if (activeSessionManager.getActive() && (await sftpPanel.reveal())) {
+        await vscode.commands.executeCommand('vssh.sessions.focus');
+      }
     }),
     vscode.window.onDidChangeActiveTerminal((terminal) => {
       if (terminal) setSessionsFocused(false);
@@ -285,6 +296,33 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('vssh.sftp.followTerminal', () =>
       followTerminalDirectory(activeSessionManager, (path) => sftpPanel.navigateRemote(path))
     ),
+    vscode.commands.registerCommand(
+      'vssh.sftp.uploadFromExplorer',
+      async (resource?: vscode.Uri, selection?: vscode.Uri[]) => {
+        const paths = (selection?.length ? selection : resource ? [resource] : [])
+          .filter((uri) => uri.scheme === 'file')
+          .map((uri) => uri.fsPath);
+        if (paths.length === 0) return;
+        await sftpPanel.reveal();
+        await sftpPanel.uploadToRemote(paths);
+      }
+    ),
+    vscode.commands.registerCommand('vssh.sftp.revealInLocalPanel', async (resource?: vscode.Uri) => {
+      if (resource?.scheme !== 'file') return;
+      await sftpPanel.navigateLocal(resource.fsPath);
+      await sftpPanel.reveal();
+    }),
+    vscode.commands.registerCommand('vssh.terminal.reconnect', async (resource?: vscode.Uri) => {
+      const terminal = resource ? await revealTerminalEditor(resource) : vscode.window.activeTerminal;
+      const sessionId = terminal && terminalManager.getSessionId(terminal);
+      const profile = sessionId && sessionStorage.getSession(sessionId);
+      if (!terminal || !profile) {
+        vscode.window.showInformationMessage('VSsh: 다시 연결할 SSH 터미널이 아닙니다.');
+        return;
+      }
+      await terminalManager.reconnect(terminal, profile);
+    }),
+
     vscode.commands.registerCommand('vssh.sftp.toggleAutoFollowTerminal', async () => {
       const configuration = vscode.workspace.getConfiguration('vssh.sftp');
       const enabled = !configuration.get<boolean>('autoFollowTerminal', true);
@@ -392,15 +430,12 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       context.subscriptions.push(closeListener);
 
-      connection.client.on('close', () => {
-        activeSessionManager.register(terminal, undefined);
-        if (activeSessionManager.getActive() === fileSession) {
-          activeSessionManager.setActive(undefined);
-        }
-      });
+      connection.client.on('close', () => activeSessionManager.release(terminal));
 
       // SSH 연결과 동일하게 터미널을 에디터 영역에 남기고 SFTP 패널로 전환한다.
-      void vscode.commands.executeCommand('workbench.action.closeSidebar');
+      if (getSettings().closeSidebarOnConnect) {
+        await vscode.commands.executeCommand('workbench.action.closeSidebar');
+      }
       await vscode.commands.executeCommand('vssh.sftp.focus');
     }),
 
@@ -423,6 +458,35 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(`"${picked.label}" 호스트 키를 삭제했습니다.`);
     })
   );
+}
+
+/**
+ * 편집기 탭 우클릭 메뉴는 탭의 `vscode-terminal:` 주소만 넘겨주고, 확장 API에는 그 주소로
+ * 터미널을 찾는 방법이 없다. 그래서 그 탭을 활성화해 활성 터미널로 만든 뒤 돌려준다.
+ */
+async function revealTerminalEditor(resource: vscode.Uri): Promise<vscode.Terminal | undefined> {
+  // 다른 편집기 그룹으로 옮겨지지 않게, 터미널 탭이 있는 그룹이 하나뿐이면 그 그룹에서 연다.
+  const groups = vscode.window.tabGroups.all.filter((group) =>
+    group.tabs.some((tab) => tab.input instanceof vscode.TabInputTerminal)
+  );
+  const viewColumn = groups.length === 1 ? groups[0].viewColumn : undefined;
+
+  const changed = new Promise<vscode.Terminal | undefined>((resolve) => {
+    const timer = setTimeout(() => {
+      listener.dispose();
+      resolve(vscode.window.activeTerminal);
+    }, 1000);
+    const listener = vscode.window.onDidChangeActiveTerminal((terminal) => {
+      clearTimeout(timer);
+      listener.dispose();
+      resolve(terminal);
+    });
+  });
+  const previous = vscode.window.activeTerminal;
+  await vscode.commands.executeCommand('vscode.open', resource, { viewColumn, preserveFocus: false });
+  // 이미 활성인 탭이면 활성 터미널이 바뀌지 않으므로 기다리지 않는다.
+  const active = vscode.window.activeTerminal;
+  return active && active !== previous ? active : changed;
 }
 
 async function pickSessionInteractively(provider: SessionsTreeProvider): Promise<SessionProfile | undefined> {

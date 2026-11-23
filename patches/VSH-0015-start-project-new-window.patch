@@ -1,8 +1,17 @@
 diff --git a/src/vs/platform/windows/electron-main/windows.ts b/src/vs/platform/windows/electron-main/windows.ts
-index 7c4f02efdfa3..e98e8a09ed25 100644
+index 7c4f02efdfa3..6dca7c9b7646 100644
 --- a/src/vs/platform/windows/electron-main/windows.ts
 +++ b/src/vs/platform/windows/electron-main/windows.ts
-@@ -98,6 +98,8 @@ export interface IOpenConfiguration extends IBaseOpenConfiguration {
+@@ -89,6 +89,8 @@ export const enum OpenContext {
+ export interface IBaseOpenConfiguration {
+ 	readonly context: OpenContext;
+ 	readonly contextWindowId?: number;
++	/** VShoon launcher: display on which to create the Workbench window. */
++	readonly vshoonDisplayId?: number;
+ }
+ 
+ export interface IOpenConfiguration extends IBaseOpenConfiguration {
+@@ -98,6 +100,8 @@ export interface IOpenConfiguration extends IBaseOpenConfiguration {
  	readonly waitMarkerFileURI?: URI;
  	readonly preferNewWindow?: boolean;
  	readonly forceNewWindow?: boolean;
@@ -12,10 +21,18 @@ index 7c4f02efdfa3..e98e8a09ed25 100644
  	readonly forceReuseWindow?: boolean;
  	readonly forceEmpty?: boolean;
 diff --git a/src/vs/platform/windows/electron-main/windowsMainService.ts b/src/vs/platform/windows/electron-main/windowsMainService.ts
-index d8428b529b26..565676288f7f 100644
+index d8428b529b26..79ae0ba21976 100644
 --- a/src/vs/platform/windows/electron-main/windowsMainService.ts
 +++ b/src/vs/platform/windows/electron-main/windowsMainService.ts
-@@ -642,7 +642,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
+@@ -67,6 +67,7 @@ type RestoreWindowsSetting = 'preserve' | 'all' | 'folders' | 'one' | 'none';
+ interface IOpenBrowserWindowOptions {
+ 	readonly userEnv?: IProcessEnvironment;
+ 	readonly cli?: NativeParsedArgs;
++	readonly vshoonDisplayId?: number;
+ 
+ 	readonly workspace?: IWorkspaceIdentifier | ISingleFolderWorkspaceIdentifier;
+ 
+@@ -642,7 +643,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
  		if (allWorkspacesToOpen.length > 0) {
  
  			// Check for existing instances
@@ -24,7 +41,7 @@ index d8428b529b26..565676288f7f 100644
  			if (windowsOnWorkspace.length > 0) {
  				const windowOnWorkspace = windowsOnWorkspace[0];
  				const filesToOpenInWindow = isEqualAuthority(filesToOpen?.remoteAuthority, windowOnWorkspace.remoteAuthority) ? filesToOpen : undefined;
-@@ -674,7 +674,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
+@@ -674,7 +675,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
  		if (allFoldersToOpen.length > 0) {
  
  			// Check for existing instances
@@ -33,3 +50,67 @@ index d8428b529b26..565676288f7f 100644
  			if (windowsOnFolderPath.length > 0) {
  				const windowOnFolderPath = windowsOnFolderPath[0];
  				const filesToOpenInWindow = isEqualAuthority(filesToOpen?.remoteAuthority, windowOnFolderPath.remoteAuthority) ? filesToOpen : undefined;
+@@ -788,6 +789,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
+ 		return this.openInBrowserWindow({
+ 			userEnv: openConfig.userEnv,
+ 			cli: openConfig.cli,
++			vshoonDisplayId: openConfig.vshoonDisplayId,
+ 			initialStartup: openConfig.initialStartup,
+ 			remoteAuthority,
+ 			forceNewWindow: resolved.forceNewWindow,
+@@ -813,6 +815,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
+ 			workspace: folderOrWorkspace.workspace,
+ 			userEnv: openConfig.userEnv,
+ 			cli: openConfig.cli,
++			vshoonDisplayId: openConfig.vshoonDisplayId,
+ 			initialStartup: openConfig.initialStartup,
+ 			remoteAuthority: folderOrWorkspace.remoteAuthority,
+ 			forceNewWindow,
+@@ -1602,7 +1605,7 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
+ 
+ 		// New window
+ 		if (!window) {
+-			const state = this.windowsStateHandler.getNewWindowState(configuration);
++			const state = this.windowsStateHandler.getNewWindowState(configuration, options.vshoonDisplayId);
+ 
+ 			// Create the window
+ 			mark('code/willCreateCodeWindow');
+diff --git a/src/vs/platform/windows/electron-main/windowsStateHandler.ts b/src/vs/platform/windows/electron-main/windowsStateHandler.ts
+index 0336fb4be72a..01dbf53802a7 100644
+--- a/src/vs/platform/windows/electron-main/windowsStateHandler.ts
++++ b/src/vs/platform/windows/electron-main/windowsStateHandler.ts
+@@ -267,7 +267,7 @@ export class WindowsStateHandler extends Disposable {
+ 		};
+ 	}
+ 
+-	getNewWindowState(configuration: INativeWindowConfiguration): INewWindowState {
++	getNewWindowState(configuration: INativeWindowConfiguration, vshoonDisplayId?: number): INewWindowState {
+ 		const state = this.doGetNewWindowState(configuration);
+ 		const windowConfig = this.configurationService.getValue<IWindowSettings | undefined>('window');
+ 
+@@ -290,6 +290,25 @@ export class WindowsStateHandler extends Disposable {
+ 			}
+ 		}
+ 
++		// VShoon: keep restored size and mode, but place a new Workbench on the launcher's display.
++		const display = vshoonDisplayId === undefined ? undefined : electron.screen.getAllDisplays().find(display => display.id === vshoonDisplayId);
++		if (display) {
++			const area = display.workArea;
++			const width = Math.min(state.width ?? area.width, area.width);
++			const height = Math.min(state.height ?? area.height, area.height);
++			const x = state.x ?? area.x;
++			const y = state.y ?? area.y;
++			const fits = x >= area.x && y >= area.y && x + width <= area.x + area.width && y + height <= area.y + area.height;
++			return {
++				...state,
++				display: display.id,
++				width,
++				height,
++				x: fits ? x : area.x + Math.round((area.width - width) / 2),
++				y: fits ? y : area.y + Math.round((area.height - height) / 2)
++			};
++		}
++
+ 		return state;
+ 	}
+ 

@@ -63,23 +63,35 @@ only for that matching panel, so one bundled panel does not inherit another pane
 Workbench still clamps it to the available area. The declaration cannot set markup, styles,
 commands, arbitrary editor types or another extension's panel.
 
-Three bundled panels declare it, and all three used to move themselves into a separate window:
+Three bundled panels declare the capability:
 
 | Extension | View type | Panel |
 | --- | --- | --- |
 | `vshoon-dbconn` | `dbconn.connectionForm` | Connection form (`760×625`) |
 | `vshoon-vssh` | `vsshSessionForm` | SSH session form (`540×560`) |
-| `vshoon-vsearch` | `vsearch.panel` | Find in Files panel (`1200×700`) |
+| `vshoon-vsearch` | `vsearch.panel` | Search popup (`1200×700`) |
 
-None of them asks for anything modal any more: each calls `createWebviewPanel` with an ordinary
+Each calls `createWebviewPanel` with an ordinary
 view column and the product decides where it lands. In ordinary VS Code the VShoon contribution
 point does not exist, so the exact same call opens a standard editor tab. The same fallback is what
-a user gets from `workbench.editor.useModal: 'off'`, which upstream honors ahead of any
+a user gets for modal declarations from `workbench.editor.useModal: 'off'`, which upstream honors ahead of any
 `MODAL_GROUP` request.
+
+Unlike an ordinary modal editor, a declared bundled panel can be dragged past the edges of the
+Workbench window. The part outside the window is clipped; enough of the header always stays inside
+the window, below the title bar, to drag it back. Resizing such a panel does not shrink it to the
+window either. Ordinary modal editors keep upstream's window-bound clamping.
 
 `npm run smoke:modal-webviews` is the capability's compatibility test. It runs each real command in
 a built VShoon and asserts both halves: the panel is a `role="dialog"` overlay with `aria-modal`
 whose webview is laid out inside it, and no editor tab carries it.
+
+The optional `presentation: "window"` field routes a declared bundled panel to upstream's
+`AUX_WINDOW_GROUP` instead. The same size limits apply. Only the initial bounds and compact mode
+are forwarded; extensions cannot request arbitrary native window options. Revealing the panel
+keeps its existing auxiliary group. A window has no modal backdrop or focus trap and may be moved
+beyond the main IDE window. No bundled panel uses it at present; ordinary VS Code still opens an
+editor tab.
 
 ### `workbench.view.osFileDrop`
 

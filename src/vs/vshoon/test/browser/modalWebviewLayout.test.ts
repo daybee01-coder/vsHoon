@@ -16,7 +16,8 @@ suite('VShoon Modal Webview Layout', () => {
 	setup(() => {
 		vshoonModalWebviewRegistry.update({ id: source, builtin: true }, [
 			{ version: 1, viewType: 'first', size: { width: 760, height: 625 } },
-			{ version: 1, viewType: 'second', size: { width: 540, height: 560 } }
+			{ version: 1, viewType: 'second', size: { width: 540, height: 560 } },
+			{ version: 1, viewType: 'native', presentation: 'window', size: { width: 1200, height: 700 } }
 		]);
 	});
 	teardown(() => vshoonModalWebviewRegistry.removeSource(source));
@@ -29,6 +30,22 @@ suite('VShoon Modal Webview Layout', () => {
 			toggleMaximized(): void { this.maximized = !this.maximized; }
 		};
 	}
+
+	test('does not apply modal geometry to a separate desktop window', () => {
+		const part = createPart();
+		const controller = store.add(new VShoonModalWebviewLayout(part));
+		controller.activate({ source, viewType: 'native' });
+		assert.deepStrictEqual([part.size, part.position, part.maximized], [undefined, undefined, false]);
+	});
+
+	test('lets a bundled popup pass the window edges while keeping its header reachable', () => {
+		const container = { width: 1000, height: 800 };
+		const controller = store.add(new VShoonModalWebviewLayout(createPart()));
+		controller.activate({ source, viewType: 'native' });
+		const ordinary = controller.positionBounds(container, 30, 700);
+		controller.activate({ source, viewType: 'first' });
+		assert.deepStrictEqual([ordinary, controller.positionBounds(container, 30, 700)], [undefined, { minLeft: -540, maxLeft: 840, minTop: 30, maxTop: 752 }]);
+	});
 
 	test('switching panels and reopening restores each panel without changing ordinary editors', () => {
 		const part = createPart();

@@ -259,6 +259,7 @@ appears in `git status`, which is the signal to remove it.
 | `npm run smoke:start-window` | Launch an isolated Windows start window, verify accessibility, then open and verify the Workbench |
 | `npm run smoke:ui-extension` | Launch an isolated Workbench and run the sample extension's UI capability |
 | `npm run smoke:modal-webviews` | Launch an isolated Workbench per bundled panel and verify each opens as a modal, not a tab |
+| `npm run smoke:java-search` | Verify real Java Ctrl+click/F12, automatic persistent search indexing and the separate search window |
 | `npm run watch` | Mirror the overlay on every change |
 | `npm run patch:save` | Rewrite the patches from the core working tree |
 | `npm run patch:save -- --add <patch> <core-file>...` | Add newly owned core files while rewriting a patch |

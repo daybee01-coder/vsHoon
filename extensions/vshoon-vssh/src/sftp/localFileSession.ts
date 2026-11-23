@@ -101,7 +101,7 @@ export class LocalFileSession implements FileSession {
   }
 
   async copy(oldPath: string, newPath: string): Promise<void> {
-    await fs.promises.cp(oldPath, newPath, { recursive: true });
+    await fs.promises.cp(oldPath, newPath, { recursive: true, verbatimSymlinks: true });
   }
 
   readFile(p: string): Promise<Uint8Array> {

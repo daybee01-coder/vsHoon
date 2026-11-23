@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { app, BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, IpcMainInvokeEvent, screen } from 'electron';
 import { Disposable, DisposableStore, toDisposable } from '../../base/common/lifecycle.js';
 import { FileAccess } from '../../base/common/network.js';
 import { isMacintosh, isWindows } from '../../base/common/platform.js';
@@ -27,6 +27,12 @@ import { IVShoonRecentProject, IVShoonRecentProjectInput, prunePinnedProjects, t
 
 const START_WINDOW_CHANNEL = 'vscode:vshoonStartWindow';
 const PINNED_PROJECTS_KEY = 'vshoon.startWindow.pinnedProjects';
+const DISPLAY_KEY = 'vshoon.startWindow.display';
+
+interface IVShoonStartWindowOptions {
+	readonly quitWhenClosed?: boolean;
+	readonly sourceWindowId?: number;
+}
 
 /** The enumerated set of things the renderer may ask for. Anything else is refused. */
 type VShoonStartWindowRequest =
@@ -80,7 +86,7 @@ export interface IVShoonStartWindowMainService {
 	 * only initializes at `LifecycleMainPhase.AfterWindowOpen`, which `CodeApplication` sets after
 	 * `openFirstWindow` returns, and the recent list cannot be read before that.
 	 */
-	show(options?: { readonly quitWhenClosed?: boolean }): Promise<boolean>;
+	show(options?: IVShoonStartWindowOptions): Promise<boolean>;
 
 	/** Brings the start window back to the foreground for a second launch request. */
 	focus(): void;
@@ -120,7 +126,7 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		return this.state === 'showing';
 	}
 
-	async show(options?: { readonly quitWhenClosed?: boolean }): Promise<boolean> {
+	async show(options?: IVShoonStartWindowOptions): Promise<boolean> {
 		if (this.state !== 'closed') {
 			if (this.state === 'showing') {
 				this.focus();
@@ -134,14 +140,23 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		this.state = 'showing';
 		this.quitWhenClosed = options?.quitWhenClosed !== false;
 		const theme = this.getTheme();
+		const source = (options?.sourceWindowId === undefined ? undefined : this.windowsMainService.getWindowById(options.sourceWindowId)) ?? this.windowsMainService.getLastActiveWindow();
+		const previousDisplayId = this.stateService.getItem<number>(DISPLAY_KEY);
+		const display = source?.win && !source.win.isDestroyed()
+			? screen.getDisplayMatching(source.getBounds())
+			: screen.getAllDisplays().find(candidate => candidate.id === previousDisplayId) ?? screen.getPrimaryDisplay();
+		const { x, y, width: availableWidth, height: availableHeight } = display.workArea;
+		const width = Math.min(720, availableWidth);
+		const height = Math.min(520, availableHeight);
 
 		const window = this.window = new BrowserWindow({
 			title: 'vs Hoon',
-			width: 720,
-			height: 520,
-			minWidth: 560,
-			minHeight: 400,
-			center: true,
+			x: x + Math.round((availableWidth - width) / 2),
+			y: y + Math.round((availableHeight - height) / 2),
+			width,
+			height,
+			minWidth: Math.min(560, width),
+			minHeight: Math.min(400, height),
 			show: false,
 			autoHideMenuBar: true,
 			backgroundColor: theme.background,
@@ -183,7 +198,17 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 		validatedIpcMain.handle(START_WINDOW_CHANNEL, onRequest);
 		this.windowDisposables.add(toDisposable(() => validatedIpcMain.removeHandler(START_WINDOW_CHANNEL)));
 
-		window.once('ready-to-show', () => window.show());
+		const rememberDisplay = () => {
+			const displayId = this.getDisplayId();
+			if (displayId !== undefined && this.stateService.getItem<number>(DISPLAY_KEY) !== displayId) {
+				this.stateService.setItem(DISPLAY_KEY, displayId);
+			}
+		};
+		window.on('move', rememberDisplay);
+		window.once('ready-to-show', () => {
+			window.show();
+			rememberDisplay();
+		});
 		window.once('closed', () => this.onClosed());
 
 		try {
@@ -254,7 +279,10 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 				return this.openPicked(await this.dialogMainService.pickWorkspace({}, this.window), 'workspace');
 
 			case 'openEmpty':
-				return this.openWindow(() => this.windowsMainService.openEmptyWindow({ context: OpenContext.DESKTOP }));
+				return this.openWindow(() => this.windowsMainService.openEmptyWindow({
+					context: OpenContext.DESKTOP,
+					vshoonDisplayId: this.getDisplayId()
+				}));
 
 			case 'quit':
 				this.window?.close(); // `onClosed` ends the session
@@ -361,8 +389,15 @@ export class VShoonStartWindowMainService extends Disposable implements IVShoonS
 			cli: this.environmentMainService.args,
 			forceNewWindow: true,
 			vshoonNewProjectWindow: true,
+			vshoonDisplayId: this.getDisplayId(),
 			urisToOpen: [openable]
 		}));
+	}
+
+	private getDisplayId(): number | undefined {
+		return this.window && !this.window.isDestroyed()
+			? screen.getDisplayMatching(this.window.getBounds()).id
+			: undefined;
 	}
 
 	/**

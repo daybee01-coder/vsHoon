@@ -39,13 +39,25 @@
   }
 
   // ---- 상태 ---------------------------------------------------------------
-  function paneState() {
-    return { path: '', entries: [], error: null, selected: new Set(), sortKey: 'name', sortAsc: true, anchor: -1 };
+  const minColumnWidths = { name: 88, size: 44, mtime: 64, mode: 52 };
+  const maxColumnWidth = 4000;
+  const columnKeys = Object.keys(minColumnWidths);
+  function clampColumnWidth(key, width) {
+    return Math.round(Math.min(maxColumnWidth, Math.max(minColumnWidths[key], width)));
+  }
+  function paneState(savedWidths) {
+    const widths = {};
+    for (const key of columnKeys) {
+      if (Number.isFinite(savedWidths?.[key])) {
+        widths[key] = clampColumnWidth(key, savedWidths[key]);
+      }
+    }
+    return { path: '', entries: [], error: null, selected: new Set(), sortKey: 'name', sortAsc: true, anchor: -1, widths };
   }
   const persisted = vscode.getState() || {};
   const state = {
-    local: paneState(),
-    remote: paneState(),
+    local: paneState(persisted.columnWidths?.local),
+    remote: paneState(persisted.columnWidths?.remote),
     connected: false,
     sessionLabel: '',
     showHidden: !!persisted.showHidden,
@@ -59,6 +71,7 @@
       queueVisible: state.queueVisible,
       queueHeight: state.queueHeight,
       splitPercent: state.splitPercent,
+      columnWidths: { local: state.local.widths, remote: state.remote.widths },
     });
   }
 
@@ -136,6 +149,12 @@
   document.addEventListener('click', hideMenu);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') hideMenu();
+    if (e.key === 'F5' && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      hideMenu();
+      if (!e.repeat) post({ type: 'refreshBoth' });
+    }
   });
 
   // dataTransfer의 사용자 MIME 데이터가 비는 Chromium/WebView 환경을 위한 보조 상태.
@@ -146,11 +165,15 @@
   function makePane(name) {
     const root = document.querySelector('.pane[data-pane="' + name + '"]');
     const listEl = root.querySelector('.pane-list');
+    const headerEl = listEl.querySelector('.pane-cols');
+    const entriesEl = listEl.querySelector('.pane-entries');
+    const columns = headerEl.querySelectorAll('[data-sort]');
     const pathEl = root.querySelector('.pane-path');
     const footEl = root.querySelector('.pane-foot');
     const titleEl = root.querySelector('.pane-title');
     const st = state[name];
     let selectionMarquee = null;
+    let renameInput = null;
 
     pathEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -184,9 +207,14 @@
       });
     });
 
-    root.querySelectorAll('.pane-cols span').forEach((c) => {
+    const columnObserver = new ResizeObserver((entries) => {
+      for (const { target } of entries) {
+        target.querySelector('.column-resizer').setAttribute('aria-valuenow', String(Math.round(target.getBoundingClientRect().width)));
+      }
+    });
+    columns.forEach((c) => {
+      const key = c.dataset.sort;
       c.addEventListener('click', () => {
-        const key = c.dataset.sort;
         if (st.sortKey === key) st.sortAsc = !st.sortAsc;
         else {
           st.sortKey = key;
@@ -194,11 +222,64 @@
         }
         render(true);
       });
+
+      const handle = document.createElement('span');
+      handle.className = 'column-resizer';
+      handle.tabIndex = 0;
+      handle.title = document.body.dataset.resizeColumnLabel;
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      handle.setAttribute('aria-label', c.textContent);
+      handle.setAttribute('aria-valuemin', String(minColumnWidths[key]));
+      handle.setAttribute('aria-valuemax', String(maxColumnWidth));
+      c.appendChild(handle);
+      columnObserver.observe(c);
+      if (st.widths[key] !== undefined) {
+        root.style.setProperty('--column-' + key, st.widths[key] + 'px');
+      }
+
+      let drag;
+      const setWidth = (width) => {
+        const clamped = clampColumnWidth(key, width);
+        st.widths[key] = clamped;
+        root.style.setProperty('--column-' + key, clamped + 'px');
+      };
+      handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || !e.isPrimary) return;
+        e.preventDefault();
+        handle.setPointerCapture(e.pointerId);
+        drag = { x: e.clientX, lastX: e.clientX, width: c.getBoundingClientRect().width };
+        handle.classList.add('dragging');
+      });
+      handle.addEventListener('pointermove', (e) => {
+        if (!drag || e.clientX === drag.lastX || !handle.hasPointerCapture(e.pointerId)) return;
+        drag.lastX = e.clientX;
+        setWidth(drag.width + e.clientX - drag.x);
+      });
+      handle.addEventListener('lostpointercapture', () => {
+        drag = undefined;
+        handle.classList.remove('dragging');
+        savePrefs();
+      });
+      handle.addEventListener('click', (e) => e.stopPropagation());
+      handle.addEventListener('dblclick', () => {
+        delete st.widths[key];
+        root.style.removeProperty('--column-' + key);
+        savePrefs();
+      });
+      handle.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          setWidth(c.getBoundingClientRect().width + (e.key === 'ArrowLeft' ? -10 : 10));
+          savePrefs();
+        }
+      });
     });
 
     listEl.addEventListener('keydown', onListKey);
     listEl.addEventListener('contextmenu', (e) => {
-      if (e.target !== listEl) return; // 빈 영역에서만
+      if (e.target !== listEl && e.target !== entriesEl) return; // 빈 영역에서만
       e.preventDefault();
       showMenu(e.clientX, e.clientY, [
         ['새 폴더', () => post({ type: 'mkdirRequest', pane: name })],
@@ -206,7 +287,7 @@
       ]);
     });
     listEl.addEventListener('dragover', (e) => {
-      if (dragHasPayload(e)) {
+      if (activeDragPayload && activeDragPayload.pane !== name && st.listingId !== undefined) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         listEl.classList.add('drop-hover');
@@ -217,33 +298,49 @@
     });
     listEl.addEventListener('drop', (e) => {
       listEl.classList.remove('drop-hover');
-      e.preventDefault();
-      const payload = readPayload(e);
-      if (!payload || payload.pane === name) return;
-      e.stopPropagation();
-      post({ type: 'transfer', from: payload.pane, names: payload.names });
+      if (activeDragPayload?.pane !== name) handleDrop(e);
     });
 
-    function dragHasPayload(e) {
-      return !!activeDragPayload || Array.from(e.dataTransfer.types || []).includes('application/x-vssh');
+    function canDrop(intoDir, intoParent) {
+      if (!activeDragPayload || st.listingId === undefined) return false;
+      if (activeDragPayload.pane !== name) return !intoParent;
+      return activeDragPayload.listingId === st.listingId && (intoParent || (!!intoDir && !activeDragPayload.names.includes(intoDir)));
     }
-    function readPayload(e) {
-      let raw = e.dataTransfer.getData('application/x-vssh');
-      if (!raw) {
-        const plain = e.dataTransfer.getData('text/plain');
-        if (plain && plain.startsWith('vssh:')) raw = plain.slice(5);
+
+    function handleDrop(e, intoDir, intoParent = false) {
+      if (!canDrop(intoDir, intoParent)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const { pane, names, listingId } = activeDragPayload;
+      activeDragPayload = null;
+      document.querySelectorAll('.drop-target, .drop-hover').forEach(row => row.classList.remove('drop-target', 'drop-hover'));
+      if (pane === name) {
+        post({ type: 'moveRequest', pane, names, listingId, intoDir, intoParent });
+      } else {
+        post({ type: 'transfer', from: pane, names, listingId, targetListingId: st.listingId, intoDir });
       }
-      if (!raw) return activeDragPayload;
-      try {
-        const p = JSON.parse(raw);
-        return p && (p.pane === 'local' || p.pane === 'remote') && Array.isArray(p.names) && p.names.length ? p : null;
-      } catch (_) {
-        return activeDragPayload;
-      }
+    }
+
+    function registerDropTarget(row, intoDir, intoParent = false) {
+      row.addEventListener('dragover', (e) => {
+        if (!canDrop(intoDir, intoParent)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = activeDragPayload.pane === name ? 'move' : 'copy';
+        listEl.classList.remove('drop-hover');
+        row.classList.add('drop-target');
+      });
+      row.addEventListener('dragleave', (e) => {
+        if (!row.contains(e.relatedTarget)) row.classList.remove('drop-target');
+      });
+      row.addEventListener('drop', (e) => {
+        row.classList.remove('drop-target');
+        handleDrop(e, intoDir, intoParent);
+      });
     }
 
     function beginSelectionMarquee(e) {
-      if (e.button !== 0 || e.target !== listEl) return;
+      if (e.button !== 0 || (e.target !== listEl && e.target !== entriesEl)) return;
       e.preventDefault();
       listEl.focus();
 
@@ -271,7 +368,7 @@
       }
 
       const rect = listEl.getBoundingClientRect();
-      if (e.clientY < rect.top + 24) listEl.scrollTop -= 12;
+      if (e.clientY < rect.top + headerEl.offsetHeight + 24) listEl.scrollTop -= 12;
       else if (e.clientY > rect.bottom - 24) listEl.scrollTop += 12;
 
       const viewX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
@@ -363,14 +460,67 @@
         post({ type: 'up', pane: name });
       } else if (e.key === 'Delete' && st.selected.size) {
         e.preventDefault();
-        post({ type: 'deleteRequest', pane: name, names: Array.from(st.selected) });
+        e.stopPropagation();
+        if (!e.repeat) requestEntryOperation('deleteRequest');
       } else if (e.key === 'F2' && st.selected.size === 1) {
         e.preventDefault();
-        post({ type: 'renameRequest', pane: name, name: Array.from(st.selected)[0] });
+        e.stopPropagation();
+        beginRename(st.selected.values().next().value);
       } else if (e.key === 'Enter' && st.selected.size === 1) {
         e.preventDefault();
         openByName(Array.from(st.selected)[0]);
       }
+    }
+
+    function requestEntryOperation(type, names = Array.from(st.selected), listingId = st.listingId) {
+      if (listingId !== undefined && names.length) post({ type, pane: name, names, listingId });
+    }
+
+    function beginRename(entryName) {
+      if (renameInput || st.listingId === undefined) return;
+      const entry = st.entries.find((item) => item.name === entryName);
+      const row = Array.from(listEl.querySelectorAll('.row[data-name]'))
+        .find((item) => item.dataset.name === entryName);
+      if (!entry || !row) return;
+
+      const listingId = st.listingId;
+      const cell = row.querySelector('.c-name');
+      const label = cell.textContent;
+      const input = renameInput = document.createElement('input');
+      input.className = 'rename-input';
+      input.type = 'text';
+      input.value = entryName;
+      input.spellcheck = false;
+      input.setAttribute('aria-label', document.body.dataset.renameLabel);
+      row.draggable = false;
+      cell.replaceChildren(input);
+
+      function finish(commit, restoreFocus) {
+        if (renameInput !== input) return;
+        renameInput = null;
+        cell.textContent = label;
+        row.draggable = true;
+        if (restoreFocus) listEl.focus({ preventScroll: true });
+        if (commit && input.value !== entryName) {
+          post({ type: 'rename', pane: name, listingId, name: entryName, newName: input.value });
+        }
+      }
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key !== 'F5') e.stopPropagation();
+        if (e.isComposing) return;
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          e.preventDefault();
+          finish(e.key === 'Enter', true);
+        }
+      });
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('dblclick', (e) => e.stopPropagation());
+      input.addEventListener('contextmenu', (e) => e.stopPropagation());
+      input.addEventListener('blur', () => finish(false, false));
+      input.focus();
+      const dot = entryName.lastIndexOf('.');
+      input.setSelectionRange(0, !entry.isDirectory && dot > 0 ? dot : entryName.length);
     }
 
     function openByName(nm) {
@@ -391,6 +541,8 @@
         applySelectionClasses();
       }
       const sel = Array.from(st.selected);
+      const listingId = st.listingId;
+      const labels = document.body.dataset;
       const items = [];
       if (name === 'local') {
         items.push(['원격으로 업로드', () => post({ type: 'transfer', from: 'local', names: sel })]);
@@ -400,8 +552,10 @@
         if (!entry.isDirectory) items.push(['편집기로 열기', () => post({ type: 'open', pane: name, name: entry.name })]);
       }
       items.push(['__sep__']);
-      if (sel.length === 1) items.push(['이름 변경', () => post({ type: 'renameRequest', pane: name, name: entry.name })]);
-      items.push(['삭제', () => post({ type: 'deleteRequest', pane: name, names: sel })]);
+      if (sel.length === 1) items.push([labels.renameLabel, () => beginRename(entry.name)]);
+      items.push([labels.copyLabel, () => requestEntryOperation('copyRequest', sel, listingId)]);
+      items.push([labels.moveLabel, () => requestEntryOperation('moveRequest', sel, listingId)]);
+      items.push([labels.deleteLabel, () => requestEntryOperation('deleteRequest', sel, listingId)]);
       items.push(['새 폴더', () => post({ type: 'mkdirRequest', pane: name })]);
       if (name === 'remote') items.push(['여기로 터미널 이동', () => post({ type: 'openTerminalHere' })]);
       showMenu(e.clientX, e.clientY, items);
@@ -413,19 +567,23 @@
         name === 'local' ? '로컬' : state.connected ? '원격 · ' + (state.sessionLabel || '') : '원격 (연결 안 됨)';
       if (document.activeElement !== pathEl) pathEl.value = st.path;
 
-      root.querySelectorAll('.pane-cols span').forEach((c) => {
+      columns.forEach((c) => {
         const on = c.dataset.sort === st.sortKey;
         c.classList.toggle('sorted', on);
         c.dataset.dir = on ? (st.sortAsc ? '▲' : '▼') : '';
       });
 
-      listEl.innerHTML = '';
+      if (renameInput) {
+        listEl.focus({ preventScroll: true });
+        renameInput = null;
+      }
+      entriesEl.replaceChildren();
 
       if (st.error) {
         const d = document.createElement('div');
         d.className = 'pane-error';
         d.textContent = st.error;
-        listEl.appendChild(d);
+        entriesEl.appendChild(d);
         footEl.textContent = '';
         return;
       }
@@ -434,7 +592,8 @@
       up.className = 'row up';
       up.innerHTML = '<span class="c-name">📁 ..</span><span class="c-size"></span><span class="c-mtime"></span><span class="c-mode"></span>';
       up.addEventListener('dblclick', () => post({ type: 'up', pane: name }));
-      listEl.appendChild(up);
+      registerDropTarget(up, undefined, true);
+      entriesEl.appendChild(up);
 
       const rows = visibleEntries();
       rows.forEach((entry, idx) => {
@@ -442,6 +601,7 @@
         row.className = 'row' + (st.selected.has(entry.name) ? ' selected' : '');
         row.dataset.name = entry.name;
         row.draggable = true;
+        if (name === 'local') row.title = document.body.dataset.nativeDragLabel;
         const icon = entry.isDirectory ? '📁' : entry.isSymbolicLink ? '🔗' : '📄';
         row.innerHTML =
           '<span class="c-name">' + icon + ' ' + escapeHtml(entry.name) + '</span>' +
@@ -458,19 +618,19 @@
             applySelectionClasses();
           }
 
-          if (name === 'local') {
-            // 로컬 항목은 이미 실경로가 있어 셸이 그대로 가져갈 수 있다. 웹뷰는 OS 드래그를 시작할
-            // 수 없으므로 확장에 경로 확정을 맡긴다. 패널 안에 다시 놓으면 OS 드롭으로 되돌아온다.
+          if (st.listingId === undefined) {
             e.preventDefault();
-            post({ type: 'osDragStart', pane: name, names: Array.from(st.selected) });
+            return;
+          }
+          if (name === 'local' && e.altKey) {
+            e.preventDefault();
+            post({ type: 'osDragStart', pane: name, names: Array.from(st.selected), listingId: st.listingId });
             return;
           }
 
-          activeDragPayload = { pane: name, names: Array.from(st.selected) };
-          const serialized = JSON.stringify(activeDragPayload);
-          e.dataTransfer.effectAllowed = 'copy';
-          e.dataTransfer.setData('application/x-vssh', serialized);
-          e.dataTransfer.setData('text/plain', 'vssh:' + serialized);
+          activeDragPayload = { pane: name, names: Array.from(st.selected), listingId: st.listingId };
+          e.dataTransfer.effectAllowed = 'copyMove';
+          e.dataTransfer.setData('application/x-vssh', name);
         });
         row.addEventListener('dragend', () => {
           activeDragPayload = null;
@@ -478,27 +638,9 @@
           document.querySelectorAll('.row.drop-target').forEach((r) => r.classList.remove('drop-target'));
         });
         if (entry.isDirectory) {
-          row.addEventListener('dragover', (e) => {
-            if (dragHasPayload(e)) {
-              e.preventDefault();
-              e.stopPropagation();
-              e.dataTransfer.dropEffect = 'copy';
-              row.classList.add('drop-target');
-            }
-          });
-          row.addEventListener('dragleave', (e) => {
-            if (!row.contains(e.relatedTarget)) row.classList.remove('drop-target');
-          });
-          row.addEventListener('drop', (e) => {
-            row.classList.remove('drop-target');
-            e.preventDefault();
-            e.stopPropagation();
-            const payload = readPayload(e);
-            if (!payload || payload.pane === name) return;
-            post({ type: 'transfer', from: payload.pane, names: payload.names, intoDir: entry.name });
-          });
+          registerDropTarget(row, entry.name);
         }
-        listEl.appendChild(row);
+        entriesEl.appendChild(row);
       });
 
       listEl.scrollTop = scroll;
@@ -508,12 +650,25 @@
     return {
       render,
       update(msg) {
+        if (activeDragPayload?.pane === name && activeDragPayload.listingId !== msg.listingId) {
+          activeDragPayload = null;
+        }
+        const sameDirectory = st.listedPath === msg.path && st.sessionId === msg.sessionId;
+        st.listedPath = msg.path;
+        st.sessionId = msg.sessionId;
+        st.listingId = msg.listingId;
         if (msg.path) st.path = msg.path;
         st.error = msg.error || null;
         st.entries = msg.entries || [];
-        st.selected = new Set();
-        st.anchor = -1;
-        render(false);
+        if (msg.selectedName) {
+          st.selected = new Set([msg.selectedName]);
+        } else if (!sameDirectory) {
+          st.selected.clear();
+        }
+        const visible = visibleEntries();
+        st.selected = new Set(visible.filter((entry) => st.selected.has(entry.name)).map((entry) => entry.name));
+        st.anchor = visible.findIndex((entry) => st.selected.has(entry.name));
+        render(sameDirectory);
       },
     };
   }

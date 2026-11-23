@@ -214,6 +214,8 @@ export interface DbObject {
   comment?: string;
   /** 루틴 인자 시그니처, 동의어 대상 등 부가 표시. */
   detail?: string;
+  /** PostgreSQL 루틴 삭제에 쓰는 스키마 한정 입력 인자 타입 목록. */
+  dropArguments?: string;
 }
 
 export interface ColumnInfo {

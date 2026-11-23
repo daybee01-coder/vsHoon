@@ -148,6 +148,7 @@ export class Session implements vscode.Disposable {
     options: Omit<QueryOptions, 'signal'>,
     /** 바인드 파라미터. 그리드 편집이 만든 UPDATE/DELETE 가 사용한다. */
     params?: readonly unknown[],
+    schemaDrop = false,
   ): Promise<QueryResult> {
     if (this.disposed) {
       throw new Error(`"${this.profile.name}" 연결이 이미 해제됐습니다.`);
@@ -160,7 +161,14 @@ export class Session implements vscode.Disposable {
       assertAllowedInReadOnly(analysis);
     }
 
-    return this.queue.run(() => this.executeSerialized(sql, analysis, options, params));
+    return this.queue.run(() => {
+      // 이 드라이버들은 DDL 전에 암시적으로 커밋한다. 열린 편집기 트랜잭션을 보호한다.
+      const implicitlyCommits = schemaDrop && this.profile.dialect !== 'postgres';
+      if (implicitlyCommits && this.txLease && !this.txLease.released) {
+        throw new Error(vscode.l10n.t('Commit or roll back the open transaction before dropping schema objects.'));
+      }
+      return this.executeSerialized(sql, analysis, options, params, implicitlyCommits);
+    });
   }
 
   /**
@@ -244,6 +252,7 @@ export class Session implements vscode.Disposable {
     analysis: StatementAnalysis,
     options: Omit<QueryOptions, 'signal'>,
     params: readonly unknown[] | undefined,
+    implicitlyCommits: boolean,
   ): Promise<QueryResult> {
     const controller = new AbortController();
     this.running = { controller };
@@ -259,7 +268,7 @@ export class Session implements vscode.Disposable {
 
       const queryOptions: QueryOptions = { ...options, signal: controller.signal };
 
-      if (this.autoCommitFlag && !this.txLease) {
+      if (implicitlyCommits || (this.autoCommitFlag && !this.txLease)) {
         return await this.executeAutoCommit(sql, queryOptions, params);
       }
       return await this.executeInTransaction(sql, analysis, queryOptions, params);

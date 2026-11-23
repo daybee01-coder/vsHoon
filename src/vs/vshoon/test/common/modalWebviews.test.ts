@@ -63,6 +63,15 @@ suite('VShoon Modal Webviews', () => {
 		assert.deepStrictEqual(registry.getModalWebview(builtin.id, 'vsearch.panel')?.size, { width: 1200, height: 700 });
 	});
 
+	test('accepts a separate window with bounded geometry and rejects arbitrary presentations', () => {
+		const registry = store.add(new VShoonModalWebviewRegistry());
+		const declaration = { version: 1, viewType: 'vsearch.panel', presentation: 'window', size: { width: 1200, height: 700 } };
+		assert.deepStrictEqual(registry.update(builtin, [declaration]), { accepted: 1, errors: [] });
+		assert.deepStrictEqual([registry.isModalWebview(builtin.id, declaration.viewType), registry.getModalWebview(builtin.id, declaration.viewType)], [false, declaration]);
+		assert.match(registry.update(builtin, [{ ...declaration, presentation: 'arbitrary' }]).errors[0], /invalid presentation/);
+		assert.match(registry.update(builtin, [{ ...declaration, alwaysOnTop: true }]).errors[0], /unsupported property/);
+	});
+
 	test('rejects third-party, malformed and duplicate declarations', () => {
 		const registry = store.add(new VShoonModalWebviewRegistry());
 		assert.match(registry.update({ id: 'publisher.extension', builtin: false }, []).errors[0], /not authorized/);

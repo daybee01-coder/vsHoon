@@ -14,6 +14,8 @@ import { viewClassFile } from './classFile';
 import { JarEditorProvider, JAR_VIEWER_VIEW_TYPE } from './jarEditor';
 import { openJar, prepareJarForExplorer, refreshJar } from './jarProject';
 import { log, output } from './output';
+import { registerWorkspaceJavaNavigation } from './workspaceJavaNavigation';
+import { registerWorkspaceScriptNavigation } from './workspaceScriptNavigation';
 
 export function activate(context: vscode.ExtensionContext): DecomApi {
 	log('Decom 읽기 전용 JAR VFS가 활성화되었습니다.');
@@ -21,6 +23,8 @@ export function activate(context: vscode.ExtensionContext): DecomApi {
 	const sourceService = new ClassSourceService(context, archiveProvider);
 	const classEditorProvider = new ClassEditorProvider();
 	registerClassNavigation(context, sourceService);
+	registerWorkspaceJavaNavigation(context, archiveProvider, sourceService);
+	registerWorkspaceScriptNavigation(context);
 
 	context.subscriptions.push(
 		output,

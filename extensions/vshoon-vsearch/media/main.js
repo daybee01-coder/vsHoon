@@ -78,15 +78,26 @@
   let files = [];
   /** @type {{fileIndex:number, matchIndex:number}[]} */
   let rows = [];
-  /** @type {HTMLElement[]} */
-  let rowEls = [];
+  /**
+   * 화면에 그린 행 (행 번호 → 요소). 결과가 수만 건이어도 보이는 범위와 여유분만 DOM 으로 만든다.
+   * @type {Map<number, HTMLElement>}
+   */
+  const rowEls = new Map();
   /** 마지막으로 고른 행(미리보기 기준이자 범위 선택의 기준점) */
   let selected = -1;
   /** 다중 선택된 행 번호 */
   let selectedSet = new Set();
 
-  const MAX_ROW_ELEMENTS = 20000;
-  let rowLimitReached = false;
+  /** 보이는 범위 위아래로 미리 그려 둘 행 수 */
+  const ROW_OVERSCAN = 10;
+  /** 목록 위아래 여백 (px) */
+  const RESULTS_PADDING = 2;
+  /** 전체 행 높이만큼의 스크롤 영역. 행은 이 안에 절대 위치로 놓인다. */
+  const resultsCanvas = document.createElement('div');
+  resultsCanvas.className = 'results-canvas';
+  /** 행 높이 (px). 0 이면 아직 재지 않았다. 글꼴 설정이 바뀔 수 있으므로 결과를 비울 때마다 다시 잰다. */
+  let rowHeight = 0;
+  let renderPending = false;
 
   const preview = {
     uri: null,
@@ -213,10 +224,11 @@
     staleResults = false;
     files = [];
     rows = [];
-    rowEls = [];
+    rowEls.clear();
     selected = -1;
     selectedSet = new Set();
-    rowLimitReached = false;
+    rowHeight = 0;
+    resultsCanvas.textContent = '';
     el.results.textContent = '';
   }
 
@@ -271,59 +283,127 @@
   /**
    * 결과를 평면 목록으로 그린다. (IntelliJ 와 같은 방식)
    * 한 줄 = 일치 한 건. 왼쪽에 해당 줄 내용, 오른쪽 끝에 파일명과 줄 번호.
+   * 여기서는 행 목록만 늘리고, 실제 DOM 은 renderRows() 가 보이는 범위만 만든다.
    */
   function appendFiles(newFiles) {
-    const frag = document.createDocumentFragment();
     for (const file of newFiles) {
       const fileIndex = files.length;
       files.push(file);
-
       for (let mi = 0; mi < file.matches.length; mi++) {
-        if (rowEls.length >= MAX_ROW_ELEMENTS) {
-          rowLimitReached = true;
-          break;
-        }
-        const m = file.matches[mi];
-        const rowEl = document.createElement('div');
-        rowEl.className = 'match-row';
-        rowEl.dataset.row = String(rows.length);
         rows.push({ fileIndex: fileIndex, matchIndex: mi });
-        rowEls.push(rowEl);
+      }
+    }
+    if (resultsCanvas.parentNode !== el.results) {
+      el.results.textContent = '';
+      el.results.appendChild(resultsCanvas);
+    }
+    scheduleRender();
+  }
 
-        const lineText = document.createElement('span');
-        lineText.className = 'line-text';
-        lineText.innerHTML = highlightedText(m.preview, m.previewColumn, m.length);
+  function scheduleRender() {
+    if (!renderPending) {
+      renderPending = true;
+      requestAnimationFrame(renderRows);
+    }
+  }
 
-        const fileName = document.createElement('span');
-        fileName.className = 'file-name';
-        fileName.textContent = file.name;
-        fileName.title = file.relPath;
+  /** 행 하나의 실제 높이를 잰다. 목록이 화면에 없으면 0 이다. */
+  function measureRowHeight() {
+    const probe = document.createElement('div');
+    probe.className = 'match-row';
+    probe.style.visibility = 'hidden';
+    probe.innerHTML = '<span class="line-text">Ag</span><span class="file-name">Ag</span><span class="line-no">1</span>';
+    resultsCanvas.appendChild(probe);
+    const height = Math.ceil(probe.getBoundingClientRect().height);
+    probe.remove();
+    return height;
+  }
 
-        const lineNo = document.createElement('span');
-        lineNo.className = 'line-no';
-        lineNo.textContent = String(m.line + 1);
-
-        rowEl.appendChild(lineText);
-        rowEl.appendChild(fileName);
-        rowEl.appendChild(lineNo);
+  /** 스크롤 위치에서 보이는 행과 여유분만 남기고 나머지 요소는 지운다. */
+  function renderRows() {
+    renderPending = false;
+    if (resultsCanvas.parentNode !== el.results) {
+      return;
+    }
+    if (!rowHeight) {
+      rowHeight = measureRowHeight();
+      if (!rowHeight) {
+        return;
+      }
+    }
+    resultsCanvas.style.height = rows.length * rowHeight + RESULTS_PADDING * 2 + 'px';
+    const top = el.results.scrollTop - RESULTS_PADDING;
+    const first = Math.max(0, Math.floor(top / rowHeight) - ROW_OVERSCAN);
+    const last = Math.min(rows.length - 1, Math.ceil((top + el.results.clientHeight) / rowHeight) + ROW_OVERSCAN);
+    for (const [index, rowEl] of rowEls) {
+      if (index < first || index > last) {
+        rowEl.remove();
+        rowEls.delete(index);
+      }
+    }
+    const frag = document.createDocumentFragment();
+    for (let index = first; index <= last; index++) {
+      if (!rowEls.has(index)) {
+        const rowEl = createRowElement(index);
+        rowEls.set(index, rowEl);
         frag.appendChild(rowEl);
       }
     }
-    el.results.appendChild(frag);
+    resultsCanvas.appendChild(frag);
+  }
+
+  function createRowElement(index) {
+    const row = rows[index];
+    const file = files[row.fileIndex];
+    const m = file.matches[row.matchIndex];
+    const rowEl = document.createElement('div');
+    rowEl.className = selectedSet.has(index) ? 'match-row selected' : 'match-row';
+    rowEl.dataset.row = String(index);
+    rowEl.style.top = RESULTS_PADDING + index * rowHeight + 'px';
+    rowEl.style.height = rowHeight + 'px';
+
+    const lineText = document.createElement('span');
+    lineText.className = 'line-text';
+    lineText.innerHTML = highlightedText(m.preview, m.previewColumn, m.length);
+
+    const fileName = document.createElement('span');
+    fileName.className = 'file-name';
+    fileName.textContent = file.name;
+    fileName.title = file.relPath;
+
+    const lineNo = document.createElement('span');
+    lineNo.className = 'line-no';
+    lineNo.textContent = String(m.line + 1);
+
+    rowEl.appendChild(lineText);
+    rowEl.appendChild(fileName);
+    rowEl.appendChild(lineNo);
+    return rowEl;
+  }
+
+  /** 행이 보이도록 필요한 만큼만 스크롤한다. 스크롤 이벤트가 새 범위를 그린다. */
+  function scrollRowIntoView(index) {
+    if (!rowHeight) {
+      renderRows();
+    }
+    if (!rowHeight) {
+      return;
+    }
+    const top = RESULTS_PADDING + index * rowHeight;
+    const bottom = top + rowHeight;
+    if (top < el.results.scrollTop) {
+      el.results.scrollTop = top;
+    } else if (bottom > el.results.scrollTop + el.results.clientHeight) {
+      el.results.scrollTop = bottom - el.results.clientHeight;
+    }
   }
 
   /** 선택 표시를 갱신한다. 바뀐 행만 건드려서 결과가 많아도 느려지지 않게 한다. */
   function applySelection(next) {
-    selectedSet.forEach((i) => {
-      if (!next.has(i) && rowEls[i]) {
-        rowEls[i].classList.remove('selected');
-      }
-    });
-    next.forEach((i) => {
-      if (rowEls[i]) {
-        rowEls[i].classList.add('selected');
-      }
-    });
+    // 그려 둔 행만 고친다. 나머지는 그릴 때 selectedSet 을 보고 표시한다.
+    for (const [index, rowEl] of rowEls) {
+      rowEl.classList.toggle('selected', next.has(index));
+    }
     selectedSet = next;
   }
 
@@ -359,9 +439,8 @@
     }
 
     selected = index;
-    const rowEl = rowEls[selected];
-    if (rowEl && !options.noScroll) {
-      rowEl.scrollIntoView({ block: 'nearest' });
+    if (!options.noScroll) {
+      scrollRowIntoView(selected);
     }
     updateEnabledState();
 
@@ -386,10 +465,7 @@
       const anchor = selected;
       selectRow(next, { range: true });
       selected = anchor;
-      const rowEl = rowEls[next];
-      if (rowEl) {
-        rowEl.scrollIntoView({ block: 'nearest' });
-      }
+      scrollRowIntoView(next);
       return;
     }
     selectRow(next);
@@ -1028,6 +1104,10 @@
 
   el.btnOpenEditor.addEventListener('click', openInEditor);
 
+  el.results.addEventListener('scroll', scheduleRender);
+  // 창 크기나 스플리터로 목록 높이가 바뀌면 보이는 행 범위도 바뀐다.
+  new ResizeObserver(scheduleRender).observe(el.results);
+
   el.results.addEventListener('click', (event) => {
     const target = event.target.closest('[data-row]');
     if (target) {
@@ -1283,7 +1363,6 @@
             seconds +
             '초)' +
             (message.truncated ? ' — 결과 수 상한에 도달했습니다.' : '') +
-            (rowLimitReached ? ' — 화면 표시 항목이 일부 생략되었습니다.' : '') +
             (message.cancelled ? ' — 중지됨' : '');
         }
         setStatus(replaceNote + text);

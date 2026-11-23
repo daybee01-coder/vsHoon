@@ -1,0 +1,286 @@
+{
+	"name": "vshoon-spring",
+	"displayName": "%displayName%",
+	"description": "%description%",
+	"version": "0.1.0",
+	"publisher": "vshoon",
+	"private": true,
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.137.0"
+	},
+	"categories": [
+		"Debuggers",
+		"Other"
+	],
+	"extensionKind": [
+		"workspace"
+	],
+	"capabilities": {
+		"virtualWorkspaces": false,
+		"untrustedWorkspaces": {
+			"supported": false,
+			"description": "%untrustedWorkspaces.description%"
+		}
+	},
+	"activationEvents": [
+		"workspaceContains:**/pom.xml",
+		"onLanguage:java",
+		"onView:vshoonSpring.configurations"
+	],
+	"main": "./out/extension.js",
+	"scripts": {
+		"compile": "gulp compile-extension:vshoon-spring",
+		"watch": "gulp watch-extension:vshoon-spring"
+	},
+	"contributes": {
+		"vshoon.ui.modalWebviews": [
+			{
+				"version": 1,
+				"viewType": "vshoonSpring.configurationForm",
+				"size": {
+					"width": 680,
+					"height": 660
+				}
+			}
+		],
+		"views": {
+			"explorer": [
+				{
+					"id": "vshoonSpring.configurations",
+					"name": "%view.configurations%",
+					"icon": "resources/spring.svg"
+				}
+			]
+		},
+		"viewsWelcome": [
+			{
+				"view": "vshoonSpring.configurations",
+				"contents": "%view.configurations.welcome%"
+			}
+		],
+		"commands": [
+			{
+				"command": "vshoon.spring.run",
+				"title": "%command.run%",
+				"category": "Spring",
+				"icon": "$(play)"
+			},
+			{
+				"command": "vshoon.spring.debug",
+				"title": "%command.debug%",
+				"category": "Spring",
+				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "vshoon.spring.stop",
+				"title": "%command.stop%",
+				"category": "Spring",
+				"icon": "$(debug-stop)"
+			},
+			{
+				"command": "vshoon.spring.restart",
+				"title": "%command.restart%",
+				"category": "Spring",
+				"icon": "$(debug-restart)"
+			},
+			{
+				"command": "vshoon.spring.stopAll",
+				"title": "%command.stopAll%",
+				"category": "Spring"
+			},
+			{
+				"command": "vshoon.spring.selectConfiguration",
+				"title": "%command.selectConfiguration%",
+				"category": "Spring"
+			},
+			{
+				"command": "vshoon.spring.add",
+				"title": "%command.add%",
+				"category": "Spring",
+				"icon": "$(add)"
+			},
+			{
+				"command": "vshoon.spring.edit",
+				"title": "%command.edit%",
+				"category": "Spring",
+				"icon": "$(edit)"
+			},
+			{
+				"command": "vshoon.spring.duplicate",
+				"title": "%command.duplicate%",
+				"category": "Spring"
+			},
+			{
+				"command": "vshoon.spring.delete",
+				"title": "%command.delete%",
+				"category": "Spring",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "vshoon.spring.detect",
+				"title": "%command.detect%",
+				"category": "Spring",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "vshoon.spring.openConfigurationFile",
+				"title": "%command.openConfigurationFile%",
+				"category": "Spring",
+				"icon": "$(json)"
+			},
+			{
+				"command": "vshoon.spring.select",
+				"title": "%command.selectConfiguration%"
+			},
+			{
+				"command": "vshoon.spring.runMainClass",
+				"title": "%command.run%"
+			}
+		],
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "vshoon.spring.select",
+					"when": "false"
+				},
+				{
+					"command": "vshoon.spring.runMainClass",
+					"when": "false"
+				}
+			],
+			"view/title": [
+				{
+					"command": "vshoon.spring.add",
+					"when": "view == vshoonSpring.configurations",
+					"group": "navigation@1"
+				},
+				{
+					"command": "vshoon.spring.detect",
+					"when": "view == vshoonSpring.configurations",
+					"group": "navigation@2"
+				},
+				{
+					"command": "vshoon.spring.openConfigurationFile",
+					"when": "view == vshoonSpring.configurations",
+					"group": "navigation@3"
+				},
+				{
+					"command": "vshoon.spring.stopAll",
+					"when": "view == vshoonSpring.configurations",
+					"group": "1_run"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "vshoon.spring.run",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.stopped",
+					"group": "inline@1"
+				},
+				{
+					"command": "vshoon.spring.debug",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.stopped",
+					"group": "inline@2"
+				},
+				{
+					"command": "vshoon.spring.restart",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.running",
+					"group": "inline@1"
+				},
+				{
+					"command": "vshoon.spring.stop",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.running",
+					"group": "inline@2"
+				},
+				{
+					"command": "vshoon.spring.run",
+					"when": "view == vshoonSpring.configurations",
+					"group": "1_run@1"
+				},
+				{
+					"command": "vshoon.spring.debug",
+					"when": "view == vshoonSpring.configurations",
+					"group": "1_run@2"
+				},
+				{
+					"command": "vshoon.spring.restart",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.running",
+					"group": "1_run@3"
+				},
+				{
+					"command": "vshoon.spring.stop",
+					"when": "view == vshoonSpring.configurations && viewItem == springConfiguration.running",
+					"group": "1_run@4"
+				},
+				{
+					"command": "vshoon.spring.edit",
+					"when": "view == vshoonSpring.configurations",
+					"group": "2_edit@1"
+				},
+				{
+					"command": "vshoon.spring.duplicate",
+					"when": "view == vshoonSpring.configurations",
+					"group": "2_edit@2"
+				},
+				{
+					"command": "vshoon.spring.delete",
+					"when": "view == vshoonSpring.configurations",
+					"group": "3_delete@1"
+				}
+			]
+		},
+		"taskDefinitions": [
+			{
+				"type": "vshoon-spring",
+				"required": [
+					"configurationId"
+				],
+				"properties": {
+					"configurationId": {
+						"type": "string",
+						"description": "%task.configurationId.description%"
+					}
+				}
+			}
+		],
+		"configuration": {
+			"title": "%configuration.title%",
+			"properties": {
+				"vshoon.spring.console": {
+					"type": "string",
+					"enum": [
+						"internalConsole",
+						"integratedTerminal",
+						"externalTerminal"
+					],
+					"enumDescriptions": [
+						"%configuration.console.internalConsole%",
+						"%configuration.console.integratedTerminal%",
+						"%configuration.console.externalTerminal%"
+					],
+					"default": "internalConsole",
+					"scope": "resource",
+					"description": "%configuration.console.description%"
+				},
+				"vshoon.spring.maven.javaxServerGoal": {
+					"type": "string",
+					"default": "",
+					"scope": "resource",
+					"markdownDescription": "%configuration.maven.javaxServerGoal.description%"
+				},
+				"vshoon.spring.maven.jakartaServerGoal": {
+					"type": "string",
+					"default": "",
+					"scope": "resource",
+					"markdownDescription": "%configuration.maven.jakartaServerGoal.description%"
+				},
+				"vshoon.spring.maven.executable": {
+					"type": "string",
+					"default": "",
+					"scope": "machine-overridable",
+					"description": "%configuration.maven.executable.description%"
+				}
+			}
+		}
+	}
+}

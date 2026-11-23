@@ -88,6 +88,7 @@ export class ConnectionTreeProvider
   private readonly onDidChangeEmitter = new vscode.EventEmitter<TreeNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeEmitter.event;
   private readonly subscriptions: vscode.Disposable[] = [];
+  private readonly dropTargets = new WeakMap<TreeNode, { profileId: string; object: Readonly<TableInfo | DbObject> }>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -103,6 +104,11 @@ export class ConnectionTreeProvider
 
   refresh(node?: TreeNode): void {
     this.onDidChangeEmitter.fire(node);
+  }
+
+  /** DDL에는 이 트리가 실제로 표시한 서버 메타데이터만 사용한다. */
+  dropTarget(node: TreeNode): { profileId: string; object: Readonly<TableInfo | DbObject> } | undefined {
+    return this.dropTargets.get(node);
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -132,6 +138,7 @@ export class ConnectionTreeProvider
       }
       case 'object': {
         const object = node.object;
+        this.dropTargets.set(node, { profileId: node.profileId, object: { ...object } });
         const item = new vscode.TreeItem(object.name, vscode.TreeItemCollapsibleState.None);
         item.iconPath = new vscode.ThemeIcon(objectIcon(object.kind));
         item.contextValue = object.kind;
@@ -141,6 +148,7 @@ export class ConnectionTreeProvider
         return item;
       }
       case 'table': {
+        this.dropTargets.set(node, { profileId: node.profileId, object: { ...node.table } });
         const item = new vscode.TreeItem(
           node.table.name,
           vscode.TreeItemCollapsibleState.Collapsed,
@@ -148,7 +156,7 @@ export class ConnectionTreeProvider
         item.iconPath = new vscode.ThemeIcon(
           node.table.kind === 'table' ? 'table' : 'eye',
         );
-        item.contextValue = node.table.kind === 'table' ? 'table' : 'view';
+        item.contextValue = node.table.kind;
         item.description =
           node.table.estimatedRows !== undefined
             ? `~${node.table.estimatedRows.toLocaleString()}행`

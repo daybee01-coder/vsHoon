@@ -17,6 +17,7 @@ export interface IVShoonModalWebviewContribution {
 	readonly version: typeof VSHOON_MODAL_WEBVIEW_CAPABILITY_VERSION;
 	readonly viewType: string;
 	readonly size?: IVShoonModalWebviewSize;
+	readonly presentation?: 'window';
 }
 
 export interface IVShoonModalWebviewSize {
@@ -96,7 +97,7 @@ export class VShoonModalWebviewRegistry extends Disposable {
 				continue;
 			}
 
-			const allowedProperties = new Set(['version', 'viewType', 'size']);
+			const allowedProperties = new Set(['version', 'viewType', 'size', 'presentation']);
 			const unexpectedProperty = Object.keys(rawContribution).find(property => !allowedProperties.has(property));
 			if (unexpectedProperty) {
 				errors.push(`VShoon modal webview contribution at index ${index} has unsupported property '${unexpectedProperty}'.`);
@@ -114,6 +115,10 @@ export class VShoonModalWebviewRegistry extends Disposable {
 				errors.push(`VShoon modal webview contribution at index ${index} has an invalid size.`);
 				continue;
 			}
+			if (rawContribution.presentation !== undefined && rawContribution.presentation !== 'window') {
+				errors.push(`VShoon webview contribution at index ${index} has an invalid presentation.`);
+				continue;
+			}
 
 			const size = rawContribution.size ? Object.freeze({
 				width: rawContribution.size.width,
@@ -122,7 +127,8 @@ export class VShoonModalWebviewRegistry extends Disposable {
 			viewTypes.set(rawContribution.viewType, Object.freeze({
 				version: VSHOON_MODAL_WEBVIEW_CAPABILITY_VERSION,
 				viewType: rawContribution.viewType,
-				size
+				size,
+				...(rawContribution.presentation === 'window' ? { presentation: 'window' as const } : {})
 			}));
 		}
 
@@ -139,7 +145,8 @@ export class VShoonModalWebviewRegistry extends Disposable {
 	}
 
 	isModalWebview(sourceId: string, viewType: string): boolean {
-		return this.getModalWebview(sourceId, viewType) !== undefined;
+		const contribution = this.getModalWebview(sourceId, viewType);
+		return contribution !== undefined && contribution.presentation !== 'window';
 	}
 
 	getModalWebview(sourceId: string, viewType: string): IVShoonModalWebviewContribution | undefined {

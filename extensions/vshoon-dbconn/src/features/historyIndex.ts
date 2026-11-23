@@ -18,6 +18,7 @@ export type QueryOrigin =
   | 'preview'
   /** 결과 그리드에서 값 수정·행 삭제로 만들어진 UPDATE/DELETE. */
   | 'grid-edit'
+  | 'schema-drop'
   /** 실행 계획 조회. */
   | 'explain';
 
@@ -117,6 +118,7 @@ const ORIGIN_LABELS: Record<QueryOrigin, string | undefined> = {
   editor: undefined,
   preview: '미리보기',
   'grid-edit': '그리드 편집',
+  'schema-drop': '객체 삭제',
   explain: '실행 계획',
 };
 
@@ -224,5 +226,5 @@ function isDialect(value: unknown): value is DialectId {
 }
 
 function isOrigin(value: unknown): value is QueryOrigin {
-  return value === 'editor' || value === 'preview' || value === 'grid-edit' || value === 'explain';
+  return value === 'editor' || value === 'preview' || value === 'grid-edit' || value === 'schema-drop' || value === 'explain';
 }

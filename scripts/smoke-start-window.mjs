@@ -15,6 +15,14 @@ const coreRoot = join(repoRoot, '.core');
 const product = JSON.parse(readFileSync(join(coreRoot, 'product.json'), 'utf8'));
 const packageIndex = process.argv.indexOf('--package');
 const packageRoot = packageIndex >= 0 ? resolve(repoRoot, process.argv[packageIndex + 1] ?? '') : undefined;
+const displayOrigin = '({ x: screen.availLeft, y: screen.availTop, width: screen.width, height: screen.height })';
+const secondaryDisplayIndex = process.argv.indexOf('--secondary-display');
+const secondaryDisplayPoint = secondaryDisplayIndex >= 0
+	? process.argv[secondaryDisplayIndex + 1]?.split(',').map(Number)
+	: undefined;
+if (secondaryDisplayIndex >= 0 && (secondaryDisplayPoint?.length !== 2 || !secondaryDisplayPoint.every(Number.isInteger))) {
+	throw new Error('Pass a screen position as --secondary-display x,y.');
+}
 const executable = process.platform === 'win32'
 	? join(packageRoot ?? join(coreRoot, '.build', 'electron'), `${product.nameShort}.exe`)
 	: undefined;
@@ -47,6 +55,7 @@ delete environment.VSCODE_PORTABLE_TEMP;
 let output = '';
 let client;
 let projectClient;
+let mainClient;
 let child;
 let second;
 
@@ -142,6 +151,7 @@ try {
 		.filter(name => typeof name === 'string');
 	assert.deepStrictEqual(accessibleButtons, ['Quit', 'New Empty Window', 'Open Workspace', 'Open Folder']);
 
+	const startDisplay = await evaluate(client, displayOrigin);
 	await evaluate(client, "document.getElementById('open-empty')?.click()");
 	client.close();
 	client = undefined;
@@ -157,6 +167,7 @@ try {
 		title: document.title
 	})`);
 	assert.strictEqual(workbenchState.ready, true, `Workbench did not initialize: ${JSON.stringify(workbenchState)}`);
+	assert.deepStrictEqual(await evaluate(client, displayOrigin), startDisplay);
 
 	// The Workbench "New Window" action shows the launcher instead of an empty window, and closing
 	// that launcher must not take the Workbench behind it with it.
@@ -193,7 +204,9 @@ try {
 	const projectPath = join(smokeRoot, 'sample-project');
 	mkdirSync(projectPath);
 	const projectPort = await findFreePort();
+	const mainInspectorPort = secondaryDisplayPoint ? await findFreePort() : undefined;
 	second = spawn(executable, [
+		...(mainInspectorPort ? [`--inspect=${mainInspectorPort}`] : []),
 		...(packageRoot ? [] : [coreRoot]),
 		projectPath,
 		`--user-data-dir=${smokeRoot}`,
@@ -210,6 +223,14 @@ try {
 	await projectClient.send('Runtime.enable');
 	await waitForWorkbenchReady(projectClient);
 	assert.match(await evaluate(projectClient, 'document.title'), /sample-project/);
+	const initialDisplay = await evaluate(projectClient, displayOrigin);
+	if (secondaryDisplayPoint) {
+		const targets = await (await fetch(`http://127.0.0.1:${mainInspectorPort}/json/list`)).json();
+		mainClient = await connect(targets[0].webSocketDebuggerUrl);
+		await moveWindow(mainClient, projectTarget.url, ...secondaryDisplayPoint);
+		await waitForDisplayChange(projectClient, initialDisplay);
+	}
+	const projectDisplay = await evaluate(projectClient, displayOrigin);
 
 	await projectClient.send('Page.bringToFront');
 	await evaluate(projectClient, 'window.focus()');
@@ -217,10 +238,17 @@ try {
 	await projectClient.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'N', code: 'KeyN', modifiers: 10, windowsVirtualKeyCode: 78 });
 	const chooserTarget = await waitForPageTarget(projectPort, second, candidate => candidate.url.includes('/startWindow/startWindow.html'), 'project chooser');
 	const chooser = await connect(chooserTarget.webSocketDebuggerUrl);
+	let chooserDisplay;
 	try {
 		await chooser.send('Runtime.enable');
 		await waitForRendererReady(chooser);
+		assert.deepStrictEqual(await evaluate(chooser, displayOrigin), projectDisplay);
 		assert.strictEqual(await evaluate(chooser, "document.querySelectorAll('.recent-open').length"), 1);
+		if (secondaryDisplayPoint) {
+			await moveWindow(mainClient, chooserTarget.url, initialDisplay.x + 40, initialDisplay.y + 40);
+			await waitForDisplayChange(chooser, projectDisplay);
+		}
+		chooserDisplay = await evaluate(chooser, displayOrigin);
 		await evaluate(chooser, "document.querySelector('.recent-open').click()");
 	} finally { chooser.close(); }
 
@@ -230,6 +258,7 @@ try {
 		await duplicate.send('Runtime.enable');
 		await waitForWorkbenchReady(duplicate);
 		assert.match(await evaluate(duplicate, 'document.title'), /sample-project/);
+		assert.deepStrictEqual(await evaluate(duplicate, displayOrigin), chooserDisplay);
 	} finally { duplicate.close(); }
 	assert.strictEqual(await evaluate(projectClient, "Boolean(document.querySelector('.monaco-workbench'))"), true, 'Project selection reused the window that already had the project.');
 
@@ -243,6 +272,7 @@ try {
 } finally {
 	client?.close();
 	projectClient?.close();
+	mainClient?.close();
 	for (const process of [second, child]) {
 		if (process && process.exitCode === null) {
 			process.kill();
@@ -255,6 +285,34 @@ try {
 	} catch (error) {
 		console.error(`[vshoon] unable to remove smoke profile ${smokeRoot}:`, error);
 	}
+}
+
+async function moveWindow(connection, url, left, top) {
+	const result = await evaluate(connection, `(() => {
+		try {
+			const { BrowserWindow } = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json')('electron');
+			const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === ${JSON.stringify(url)});
+			window.setPosition(${left}, ${top});
+			return { ok: true };
+		} catch (error) {
+			return { error: String(error) };
+		}
+	})()`);
+	assert.strictEqual(result.ok, true, JSON.stringify(result));
+}
+
+async function waitForDisplayChange(connection, initialDisplay) {
+	const deadline = Date.now() + 5000;
+	while (Date.now() < deadline) {
+		const display = await evaluate(connection, displayOrigin);
+		if (display.x !== initialDisplay.x || display.y !== initialDisplay.y ||
+			display.width !== initialDisplay.width || display.height !== initialDisplay.height) {
+			return;
+		}
+		await delay(100);
+	}
+	const location = await evaluate(connection, '({ x: window.screenX, y: window.screenY })');
+	throw new Error(`The window did not move to a different display: ${JSON.stringify({ initialDisplay, location })}`);
 }
 
 async function waitForRendererReady(connection) {

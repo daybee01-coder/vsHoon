@@ -2,6 +2,7 @@ import { Client, ClientChannel } from 'ssh2';
 import * as vscode from 'vscode';
 import * as iconv from 'iconv-lite';
 import { BroadcastManager, BroadcastTarget } from './broadcastManager';
+import { MouseReportingFilter } from './mouseReportingFilter';
 import {
   directoryTrackingBootstrap,
   ShellDirectorySequenceParser,
@@ -14,6 +15,8 @@ export interface SshPseudoterminalOptions {
   /** 'UTF-8' | 'EUC-KR' | 'CP949' 등 PuTTY의 LineCodePage와 매핑되는 값 */
   encoding: string;
   broadcastManager?: BroadcastManager;
+  /** false면 원격 프로그램의 마우스 보고 요청을 걸러 드래그가 항상 터미널 선택(복사)이 되게 한다. */
+  mouseReporting?: boolean;
 }
 
 function toIconvEncoding(encoding: string): string {
@@ -40,32 +43,64 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
   readonly onDidChangeDirectory = this.directoryEmitter.event;
 
   private stream: ClientChannel | undefined;
+  /** 재접속하면 바뀐다. 셸을 열 때마다 그 시점의 연결을 쓴다. */
+  private client: Client;
+  private dimensions: vscode.TerminalDimensions | undefined;
   private readonly iconvEncoding: string;
   private readonly outputDecoder: ReturnType<typeof iconv.getDecoder>;
   private readonly directoryParser = new ShellDirectorySequenceParser();
+  private readonly mouseFilter: MouseReportingFilter | undefined;
   private closed = false;
 
   constructor(private readonly options: SshPseudoterminalOptions) {
+    this.client = options.client;
+    this.mouseFilter = options.mouseReporting ? undefined : new MouseReportingFilter();
     this.iconvEncoding = toIconvEncoding(options.encoding);
     this.outputDecoder = iconv.getDecoder(this.iconvEncoding);
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
+    this.dimensions = initialDimensions;
     void this.openShell(initialDimensions);
   }
 
+  /**
+   * 같은 탭에서 새 SSH 연결로 셸을 다시 연다. 이전 연결은 끊고, 화면에 남은 기록은 그대로 둔다.
+   * 이전 셸 스트림이 뒤늦게 닫혀도 탭을 닫지 않도록 스트림마다 지금 것인지 확인한다.
+   */
+  reconnect(client: Client): void {
+    if (this.closed) {
+      client.end();
+      return;
+    }
+    const previousStream = this.stream;
+    const previousClient = this.client;
+    this.stream = undefined;
+    this.client = client;
+    this.options.broadcastManager?.unregister(this);
+    previousStream?.end();
+    previousClient.end();
+    this.writeEmitter.fire('\r\n\x1b[33m[VSsh] 다시 연결했습니다.\x1b[0m\r\n');
+    void this.openShell(this.dimensions);
+  }
+
   private async openShell(initialDimensions: vscode.TerminalDimensions | undefined): Promise<void> {
+    const client = this.client;
     const cols = initialDimensions?.columns ?? 80;
     const rows = initialDimensions?.rows ?? 24;
-    const shell = await this.detectRemoteShell();
-    if (this.closed) {
+    const shell = await this.detectRemoteShell(client);
+    if (this.closed || client !== this.client) {
       return;
     }
     // PuTTY 기본값(xterm)과 맞춘다. xterm-256color였을 때 vi/vim이 TERM 기반으로 마우스
     // 프로토콜을 다르게 자동감지해서 휠 스크롤 업만 안 먹는 것으로 의심됨(실제 PuTTY/다른
     // 터미널로는 같은 서버에서 문제 없음을 확인함).
     const pty = { term: 'xterm', cols, rows, ...(shell ? { modes: { ECHO: 0 as const } } : undefined) };
-    this.options.client.shell(pty, (err, stream) => {
+    client.shell(pty, (err, stream) => {
+      if (client !== this.client) {
+        stream?.end();
+        return;
+      }
       if (err) {
         this.writeEmitter.fire(`\r\n연결 실패: ${err.message}\r\n`);
         this.closeEmitter.fire(1);
@@ -80,9 +115,13 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
       stream.on('data', (data: Buffer) => this.handleOutput(this.outputDecoder.write(data)));
       stream.stderr.on('data', (data: Buffer) => this.writeEmitter.fire(this.decode(data)));
       stream.on('close', () => {
-        const decoded = this.outputDecoder.end();
-        if (decoded) {
-          this.handleOutput(decoded);
+        if (stream !== this.stream) {
+          return; // 재접속으로 버린 이전 셸
+        }
+        const decoded = this.outputDecoder.end() ?? '';
+        const rest = this.mouseFilter ? this.mouseFilter.push(decoded) + this.mouseFilter.flush() : decoded;
+        if (rest) {
+          this.directoryOutput(rest);
         }
         const pending = this.directoryParser.flush();
         if (pending) this.writeEmitter.fire(pending);
@@ -99,7 +138,7 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
     this.closed = true;
     this.options.broadcastManager?.unregister(this);
     this.stream?.end();
-    this.options.client.end();
+    this.client.end();
     this.directoryEmitter.dispose();
   }
 
@@ -114,6 +153,7 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
   }
 
   setDimensions(dimensions: vscode.TerminalDimensions): void {
+    this.dimensions = dimensions;
     this.stream?.setWindow(dimensions.rows, dimensions.columns, 0, 0);
   }
 
@@ -173,6 +213,10 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
   }
 
   private handleOutput(data: string): void {
+    this.directoryOutput(this.mouseFilter ? this.mouseFilter.push(data) : data);
+  }
+
+  private directoryOutput(data: string): void {
     const parsed = this.directoryParser.push(data);
     if (parsed.output) {
       this.writeEmitter.fire(parsed.output);
@@ -182,7 +226,7 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
     }
   }
 
-  private detectRemoteShell(): Promise<TrackableShell | undefined> {
+  private detectRemoteShell(client: Client): Promise<TrackableShell | undefined> {
     return new Promise((resolve) => {
       let settled = false;
       let output = '';
@@ -196,7 +240,7 @@ export class SshPseudoterminal implements vscode.Pseudoterminal, BroadcastTarget
         resolve(shell);
       };
       timer = setTimeout(() => finish(), 1500);
-      this.options.client.exec('printf "%s" "$SHELL"', (err, stream) => {
+      client.exec('printf "%s" "$SHELL"', (err, stream) => {
         if (err || settled) {
           stream?.end();
           finish();

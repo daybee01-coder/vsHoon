@@ -5,6 +5,7 @@ import type { CatalogCache } from '../metadata/catalog';
 import type { QueryResult } from '../types';
 import type { ResultPage, ResultPager, ResultTab, ResultsPanel } from '../views/resultsPanel';
 import type { QueryHistory } from './queryHistory';
+import type { QueryOrigin } from './historyIndex';
 import { computeEditSource } from '../sql/editable';
 import {
   analyzeStatement,
@@ -226,15 +227,33 @@ export class QueryExecutor implements ResultPager {
     }
 
     this.highlight(editor, statements);
+    await this.executeSequence(session, statements, editor.document.uri.toString(), 'editor');
+  }
 
+  /** Lists every selected object while applying the existing production confirmation. */
+  async confirmSchemaDrops(session: Session, sql: readonly string[]): Promise<boolean> {
+    const statements = sql.map(text => ({ text, start: 0, end: text.length, empty: false }));
+    const detail = [session.profile.name + ' (' + environmentLabel(session.profile.environment) + ')', ...sql].join('\n');
+    return this.confirmBeforeRun(session, statements, detail);
+  }
+
+  /** Uses the same query results, history, and transaction handling as editor commands. */
+  async executeSchemaDrops(session: Session, sql: readonly string[]): Promise<number> {
+    const statements = sql.map(text => ({ text, start: 0, end: text.length, empty: false }));
+    return this.executeSequence(session, statements, `dbconn:schema-drop:${session.profile.id}`, 'schema-drop');
+  }
+
+  private async executeSequence(
+    session: Session, statements: readonly SqlStatement[], sourceKey: string, origin: QueryOrigin,
+  ): Promise<number> {
     const config = vscode.workspace.getConfiguration('dbconn');
     const maxRows = config.get<number>('execution.maxRows', 1000);
     const timeoutMs = config.get<number>('execution.queryTimeoutMs', 60_000);
 
     // 이 문서의 이전 결과(고정하지 않은 것)를 비우고 새 묶음을 시작한다.
-    const sourceKey = editor.document.uri.toString();
     this.results.beginRun(sourceKey);
 
+    let succeeded = 0;
     await vscode.commands.executeCommand('setContext', 'dbconn.running', true);
     try {
       for (const statement of statements) {
@@ -248,7 +267,8 @@ export class QueryExecutor implements ResultPager {
         );
         const startedAt = Date.now();
         try {
-          const result = await session.execute(statement.text, { maxRows, timeoutMs });
+          const result = await session.execute(statement.text, { maxRows, timeoutMs }, undefined, origin === 'schema-drop');
+          succeeded++;
           await this.attachEditSource(session, result, tabId);
           this.results.completeQuery(
             tabId,
@@ -260,7 +280,7 @@ export class QueryExecutor implements ResultPager {
             profileId: session.profile.id,
             connectionName: session.profile.name,
             dialect: session.profile.dialect,
-            origin: 'editor',
+            origin,
             startedAt,
             durationMs: result.durationMs,
             status: 'ok',
@@ -280,19 +300,22 @@ export class QueryExecutor implements ResultPager {
             profileId: session.profile.id,
             connectionName: session.profile.name,
             dialect: session.profile.dialect,
-            origin: 'editor',
+            origin,
             startedAt,
             durationMs: Date.now() - startedAt,
             status: 'error',
             error: error instanceof Error ? error.message : String(error),
           });
           this.reportError(error, session);
-          return; // 실패 지점에서 멈춘다.
+          if (origin === 'editor' || session.transactionState === 'failed' || error instanceof CancelledError) {
+            break;
+          }
         }
       }
     } finally {
       await vscode.commands.executeCommand('setContext', 'dbconn.running', false);
     }
+    return succeeded;
   }
 
   /**
@@ -370,7 +393,7 @@ export class QueryExecutor implements ResultPager {
     // 이어 붙이기는 그리드를 비우지 않는다 — 보고 있던 위치와 선택을 지킨다.
     // 붙일 자리를 요청 시점에 찍어 둔다. 응답이 오는 사이 쪽이 바뀌었으면
     // 결과 패널이 이 묶음을 버린다.
-    const expected = { offset: page.offset, loaded: tab.result?.rows.length ?? 0 };
+    const expected = { page, result: tab.result, loaded: tab.result?.rows.length ?? 0 };
     if (append) {
       this.results.beginAppend(tab.id);
     } else {
@@ -490,6 +513,7 @@ export class QueryExecutor implements ResultPager {
   private async confirmBeforeRun(
     session: Session,
     statements: SqlStatement[],
+    schemaDropDetail?: string,
   ): Promise<boolean> {
     const config = vscode.workspace.getConfiguration('dbconn');
     const analyzed = statements.map((statement) => ({
@@ -503,7 +527,7 @@ export class QueryExecutor implements ResultPager {
     if (isProduction(session.profile.environment) && mutating.length > 0) {
       const mode = config.get<string>('execution.productionGuard', 'type-to-confirm');
       if (mode !== 'off') {
-        const accepted = await this.confirmProduction(session, mutating, risky, mode);
+        const accepted = await this.confirmProduction(session, mutating, risky, mode, schemaDropDetail);
         if (!accepted) {
           return false;
         }
@@ -513,6 +537,15 @@ export class QueryExecutor implements ResultPager {
     }
 
     // ── 일반 위험 구문 ──
+    if (schemaDropDetail !== undefined) {
+      const drop = vscode.l10n.t('Drop Objects');
+      const choice = await vscode.window.showWarningMessage(
+        vscode.l10n.t('Drop {0} selected database objects?', statements.length),
+        { modal: true, detail: schemaDropDetail },
+        drop,
+      );
+      return choice === drop;
+    }
     if (!config.get<boolean>('execution.confirmDestructive', true) || risky.length === 0) {
       return true;
     }
@@ -531,11 +564,12 @@ export class QueryExecutor implements ResultPager {
     mutating: { statement: SqlStatement; analysis: StatementAnalysis }[],
     risky: { statement: SqlStatement; analysis: StatementAnalysis }[],
     mode: string,
+    schemaDropDetail?: string,
   ): Promise<boolean> {
     const shown = risky.length > 0 ? risky : mutating;
     const choice = await vscode.window.showWarningMessage(
       `운영 연결에서 변경 구문 ${mutating.length}개를 실행하려고 합니다.`,
-      { modal: true, detail: this.buildRiskDetail(session, shown) },
+      { modal: true, detail: schemaDropDetail ?? this.buildRiskDetail(session, shown) },
       '계속',
     );
     if (choice !== '계속') {

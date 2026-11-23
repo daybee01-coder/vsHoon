@@ -29,6 +29,7 @@ const ORIGIN_ICONS: Record<QueryHistoryEntry['origin'], string> = {
   editor: 'play',
   preview: 'table',
   'grid-edit': 'edit',
+  'schema-drop': 'trash',
   explain: 'graph',
 };
 

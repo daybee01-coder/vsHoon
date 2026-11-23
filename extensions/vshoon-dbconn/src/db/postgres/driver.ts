@@ -444,12 +444,16 @@ const catalog: CatalogQueries = {
 
     // prokind 는 PostgreSQL 11 부터다. 실패하면 그냥 루틴 목록을 비운다 —
     // 구버전 호환을 위해 별도 분기를 두는 것보다 조용히 없는 편이 낫다.
-    await collect(objects, async () => {
+    await collect<DbObject>(objects, async () => {
       const result = await conn.execute(
         `SELECT p.proname,
                 p.prokind,
                 pg_catalog.pg_get_function_identity_arguments(p.oid) AS args,
-                obj_description(p.oid, 'pg_proc') AS comment
+                obj_description(p.oid, 'pg_proc') AS comment,
+                (SELECT string_agg(format('%I.%I', tn.nspname, t.typname), ', ' ORDER BY a.position)
+                   FROM unnest(p.proargtypes) WITH ORDINALITY AS a(type_oid, position)
+                   JOIN pg_catalog.pg_type t ON t.oid = a.type_oid
+                   JOIN pg_catalog.pg_namespace tn ON tn.oid = t.typnamespace) AS drop_args
            FROM pg_catalog.pg_proc p
            JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
           WHERE n.nspname = $1
@@ -464,6 +468,7 @@ const catalog: CatalogQueries = {
         kind: String(row[1]) === 'p' ? ('procedure' as const) : ('function' as const),
         detail: row[2] ? `(${String(row[2])})` : '()',
         comment: row[3] === null ? undefined : String(row[3]),
+        dropArguments: row[4] === null ? '' : String(row[4]),
       }));
     });
 

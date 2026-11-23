@@ -410,7 +410,7 @@ const catalog: CatalogQueries = {
     });
 
     // 저장 프로시저 / 함수
-    await collect(objects, async () => {
+    await collect<DbObject>(objects, async () => {
       const result = await conn.execute(
         `SELECT ROUTINE_NAME, ROUTINE_TYPE, ROUTINE_COMMENT, DTD_IDENTIFIER
            FROM information_schema.ROUTINES

@@ -43,8 +43,8 @@ export interface ResultPage {
   /**
    * 스크롤로 이어 붙이기를 멈춘 상태인지.
    *
-   * 한도에 닿았거나 이어 붙이다 실패했을 때 켜진다. 켜져 있으면 그리드가
-   * 바닥에 닿아도 자동으로 더 부르지 않는다 — 실패한 요청을 스크롤할 때마다
+   * 한도에 닿았거나 이어 붙이다 실패했을 때 켜진다. 켜져 있으면 그리드를
+   * 스크롤해도 자동으로 더 부르지 않는다 — 실패한 요청을 스크롤할 때마다
    * 다시 던지면 오류 알림만 쌓인다. 사용자가 직접 누르면 다시 시도한다.
    */
   autoPaused?: boolean;
@@ -85,6 +85,8 @@ export interface ResultTab {
   page?: ResultPage;
   /** 스크롤로 다음 묶음을 가져오는 중인지. 그리드는 그대로 두고 표시만 바뀐다. */
   loadingMore?: boolean;
+  /** 전체 선택 전에 남은 행을 가져오는 중인지. */
+  loadingAll?: boolean;
   error?: string;
   startedAt: number;
   state: 'running' | 'done' | 'error';
@@ -94,9 +96,10 @@ type OutboundMessage = {
   type: 'tabs';
   tabs: SerializedTab[];
   activeId: string | undefined;
+  selectAllId?: string;
   /** 지금 적용 중인 행 제한 — 툴바의 선택 상자가 이 값을 보여준다. */
   rowLimit: number;
-  /** 바닥까지 스크롤하면 자동으로 이어 조회할지. */
+  /** 스크롤이 70%에 이르면 자동으로 이어 조회할지. */
   autoLoadMore: boolean;
 };
 
@@ -135,6 +138,7 @@ interface SerializedTab {
     /** 지금 화면에 쌓여 있는 행 수 (이어 조회로 늘어난다). */
     loaded: number;
     loadingMore: boolean;
+    loadingAll: boolean;
     autoPaused: boolean;
   };
 }
@@ -145,6 +149,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
   private view: vscode.WebviewView | undefined;
   private pager: ResultPager | undefined;
   private readonly tabs: ResultTab[] = [];
+  private readonly appendRequests = new Map<ResultTab, Promise<void>>();
   private activeTabId: string | undefined;
   /** 고정되지 않은 탭의 상한 — 오래된 것부터 버려 메모리를 지킨다. */
   private readonly maxUnpinnedTabs = 12;
@@ -255,7 +260,9 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
       return;
     }
     tab.loadingMore = true;
-    this.postTabs();
+    if (!tab.loadingAll) {
+      this.postTabs();
+    }
   }
 
   /**
@@ -270,7 +277,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
     rows: CellValue[][],
     hasMore: boolean,
     /** 요청을 보낼 때의 쪽 상태. 그사이 화면이 달라졌으면 이 묶음은 버린다. */
-    expected: { offset: number; loaded: number },
+    expected: { page: ResultPage; result: QueryResult | undefined; loaded: number },
   ): void {
     const tab = this.tabs.find((t) => t.id === id);
     if (!tab) {
@@ -282,14 +289,18 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
     }
     // 이어 붙이는 동안 다른 쪽으로 옮겨 갔거나 결과가 갈아 끼워졌을 수 있다.
     // 그때 그대로 붙이면 화면에 다른 구간의 행이 섞인다.
-    if (tab.page.offset !== expected.offset || tab.result.rows.length !== expected.loaded) {
+    if (tab.state !== 'done' || tab.page !== expected.page || tab.result !== expected.result || tab.result.rows.length !== expected.loaded) {
       this.postTabs();
       return;
     }
-    tab.result.rows.push(...rows);
+    for (const row of rows) {
+      tab.result.rows.push(row);
+    }
     tab.result.rowCount = tab.result.rows.length;
     tab.page.hasMore = hasMore;
-    this.postTabs();
+    if (!tab.loadingAll) {
+      this.postTabs();
+    }
   }
 
   /**
@@ -305,7 +316,9 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
     if (tab.page) {
       tab.page.autoPaused = true;
     }
-    this.postTabs();
+    if (!tab.loadingAll) {
+      this.postTabs();
+    }
   }
 
   /** 같은 탭을 다시 채우는 동안(페이지 이동·정렬) 진행 중임을 보여준다. */
@@ -372,12 +385,13 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
     await vscode.commands.executeCommand('dbconn.results.focus');
   }
 
-  private postTabs(): void {
+  private postTabs(selectAllId?: string): void {
     const config = vscode.workspace.getConfiguration('dbconn');
     const message: OutboundMessage = {
       type: 'tabs',
       tabs: this.tabs.map((tab) => serializeTab(tab)),
       activeId: this.activeTabId,
+      selectAllId,
       rowLimit: config.get<number>('execution.maxRows', 1000),
       autoLoadMore: config.get<boolean>('execution.autoLoadMore', true),
     };
@@ -508,10 +522,17 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
   private async handlePage(tab: ResultTab | undefined, message: unknown): Promise<void> {
     const page = tab?.page;
-    if (!tab || !page || !this.pager) {
+    if (!tab || !page || !this.pager || tab.state === 'running' || tab.loadingAll) {
       return;
     }
     const direction = (message as { direction?: unknown }).direction;
+    if (direction === 'all') {
+      await this.loadAllForSelection(tab, page, this.pager);
+      return;
+    }
+    if (tab.loadingMore) {
+      return;
+    }
     // 이어 조회로 쌓인 만큼을 세야 "다음 쪽"이 건너뛰거나 겹치지 않는다.
     const loaded = tab.result?.rows.length ?? 0;
     let offset = page.offset;
@@ -536,14 +557,14 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
   }
 
   /**
-   * 바닥에 닿았을 때 다음 묶음을 이어 붙인다.
+   * 스크롤이 70%에 이르면 다음 묶음을 이어 붙인다.
    *
    * 자동 요청에는 상한을 둔다. 수십만 행을 스크롤만으로 웹뷰에 쌓으면 확장
    * 호스트가 아니라 편집기 창이 먼저 죽는다. 직접 누른 요청(auto=false)은
    * 본인이 감수하겠다는 뜻이므로 상한에 걸리지 않는다.
    */
   private async handleLoadMore(tab: ResultTab, page: ResultPage, auto: boolean): Promise<void> {
-    if (!this.pager || !page.hasMore || tab.loadingMore || tab.state === 'running') {
+    if (!this.pager || !page.hasMore || tab.state !== 'done') {
       return;
     }
     const loaded = tab.result?.rows.length ?? 0;
@@ -563,7 +584,46 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
       // 직접 눌렀으면 멈춰 있던 자동 조회도 다시 살린다.
       page.autoPaused = false;
     }
-    await this.pager.runPage(tab, { offset: page.offset + loaded, sort: page.sort, append: true });
+    const request = this.pager.runPage(tab, { offset: page.offset + loaded, sort: page.sort, append: true });
+    this.appendRequests.set(tab, request);
+    try {
+      await request;
+    } finally {
+      this.appendRequests.delete(tab);
+    }
+  }
+
+  private async loadAllForSelection(tab: ResultTab, page: ResultPage, pager: ResultPager): Promise<void> {
+    const result = tab.result;
+    if (!result || tab.state !== 'done') {
+      return;
+    }
+    const isCurrent = () => this.tabs.includes(tab) && tab.page === page && tab.result === result && tab.state === 'done';
+    tab.loadingAll = true;
+    this.postTabs();
+    try {
+      // Ctrl+A may arrive while the scroll request is already fetching the next offset.
+      const pending = this.appendRequests.get(tab);
+      if (pending) {
+        const loaded = result.rows.length;
+        await pending;
+        if (page.hasMore && result.rows.length === loaded) {
+          return;
+        }
+      }
+      while (isCurrent() && page.hasMore) {
+        const loaded = result.rows.length;
+        await pager.runPage(tab, { offset: page.offset + loaded, sort: page.sort, append: true });
+        if (result.rows.length === loaded) {
+          break;
+        }
+      }
+    } finally {
+      tab.loadingAll = false;
+      if (this.tabs.includes(tab)) {
+        this.postTabs(isCurrent() && !page.hasMore ? tab.id : undefined);
+      }
+    }
   }
 
   /**
@@ -621,7 +681,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
       }
     }
     const active = this.activeTab();
-    if (active?.page && this.pager) {
+    if (active?.page && this.pager && !active.loadingMore && !active.loadingAll) {
       await this.pager.runPage(active, { offset: active.page.offset, sort: active.page.sort });
       return;
     }
@@ -630,7 +690,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
   private async handleServerSort(tab: ResultTab | undefined, message: unknown): Promise<void> {
     const page = tab?.page;
-    if (!tab || !page || !this.pager) {
+    if (!tab || !page || !this.pager || tab.loadingMore || tab.loadingAll || tab.state === 'running') {
       return;
     }
     const { column, dir } = message as { column?: unknown; dir?: unknown };
@@ -653,7 +713,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
   private async handleUpdateCell(tab: ResultTab | undefined, message: unknown): Promise<void> {
     const editSource = tab?.result?.editSource;
-    if (!tab || !editSource || !tab.result) {
+    if (!tab || !editSource || !tab.result || tab.loadingAll) {
       return;
     }
 
@@ -705,7 +765,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
   private async handleInsertRow(tab: ResultTab | undefined, message: unknown): Promise<void> {
     const editSource = tab?.result?.editSource;
-    if (!tab || !editSource) {
+    if (!tab || !editSource || tab.loadingAll) {
       return;
     }
     const cells = (message as { cells?: unknown }).cells;
@@ -744,7 +804,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
     void vscode.window.setStatusBarMessage(`$(check) ${outcome.message}`, 3000);
     // 서버가 채운 기본값·시퀀스 값을 보려면 다시 읽어야 한다.
-    if (tab.page && this.pager) {
+    if (tab.page && this.pager && !tab.loadingMore && !tab.loadingAll) {
       await this.pager.runPage(tab, { offset: tab.page.offset, sort: tab.page.sort });
     } else {
       void vscode.window.setStatusBarMessage(
@@ -756,7 +816,7 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
 
   private async handleDeleteRow(tab: ResultTab | undefined, message: unknown): Promise<void> {
     const editSource = tab?.result?.editSource;
-    if (!tab || !editSource || !tab.result) {
+    if (!tab || !editSource || !tab.result || tab.loadingAll) {
       return;
     }
     const { rowIndex } = message as { rowIndex?: unknown };
@@ -862,14 +922,27 @@ export class ResultsPanel implements vscode.WebviewViewProvider, vscode.Disposab
   <link href="${styleUri}" rel="stylesheet">
   <title>쿼리 결과</title>
 </head>
-<body>
+<body data-select-all-label="${vscode.l10n.t('Select All (Ctrl+A)')}"
+      data-loading-all-label="${vscode.l10n.t('Loading all rows for selection…')}"
+      data-paging-help="${vscode.l10n.t('Scroll 70% down to load the next batch. Press Ctrl+A to load and select the remaining rows. Use ORDER BY for consistent paging.')}"
+      data-resize-column-label="${vscode.l10n.t('Drag or use Left/Right Arrow to resize. Double-click to fit.')}">
   <div id="tabbar" role="tablist"></div>
   <div id="toolbar">
     <span id="summary"></span>
     <span class="spacer"></span>
     <span id="selection" title="선택한 블록 크기"></span>
+    <div id="copy-controls">
+      <label for="copy-separator">${vscode.l10n.t('Copy Delimiter')}</label>
+      <select id="copy-separator">
+        <option value="tab">${vscode.l10n.t('Tab')}</option>
+        <option value="comma">${vscode.l10n.t('Comma (,)')}</option>
+        <option value="semicolon">${vscode.l10n.t('Semicolon (;)')}</option>
+        <option value="pipe">${vscode.l10n.t('Pipe (|)')}</option>
+      </select>
+      <button id="btn-copy" type="button">${vscode.l10n.t('Copy')}</button>
+    </div>
     <button id="btn-prev" type="button" title="이전 쪽">◀</button>
-    <span id="pageinfo"></span>
+    <span id="pageinfo" role="status"></span>
     <button id="btn-next" type="button" title="다음 쪽">▶</button>
     <button id="btn-more" type="button" title="다음 묶음을 지금 결과 뒤에 이어서 조회">더 불러오기</button>
     <label id="rowlimit-label" for="rowlimit">행 제한</label>
@@ -919,6 +992,7 @@ function serializeTab(tab: ResultTab): SerializedTab {
       sort: tab.page.sort,
       loaded: tab.result?.rows.length ?? 0,
       loadingMore: tab.loadingMore === true,
+      loadingAll: tab.loadingAll === true,
       autoPaused: tab.page.autoPaused === true,
     };
   }

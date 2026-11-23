@@ -227,7 +227,7 @@ export async function replaceAll(
     for (const f of files) {
       uris.push(vscode.Uri.parse(f.uri));
     }
-  }, { preemptible: false });
+  }, { preemptible: false, maxTotalMatches: 0 });
 
   const targets: { uri: vscode.Uri; edits: PendingEdit[] }[] = [];
   for (const uri of uris) {

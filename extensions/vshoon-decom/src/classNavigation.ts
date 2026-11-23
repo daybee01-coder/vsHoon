@@ -15,7 +15,7 @@ class ClassDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
 			return new vscode.DocumentSymbol(
 				symbol.name,
 				symbol.detail,
-				symbol.kind === 'type' ? vscode.SymbolKind.Class : vscode.SymbolKind.Method,
+				symbol.kind === 'type' ? vscode.SymbolKind.Class : symbol.kind === 'field' ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
 				range,
 				range
 			);

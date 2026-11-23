@@ -1,0 +1,21 @@
+{
+  "Select All (Ctrl+A)": "전체 선택 (Ctrl+A)",
+  "Loading all rows for selection…": "전체 선택을 위해 남은 행을 불러오는 중…",
+  "Scroll 70% down to load the next batch. Press Ctrl+A to load and select the remaining rows. Use ORDER BY for consistent paging.": "스크롤을 70% 내리면 다음 묶음을 불러옵니다. Ctrl+A로 남은 행을 불러와 전체를 선택합니다. 페이지 사이의 순서를 유지하려면 ORDER BY를 사용하세요.",
+  "Copy": "복사",
+  "Copy Delimiter": "복사 구분자",
+  "Tab": "탭",
+  "Comma (,)": "쉼표 (,)",
+  "Semicolon (;)": "세미콜론 (;)",
+  "Pipe (|)": "세로줄 (|)",
+  "Drag or use Left/Right Arrow to resize. Double-click to fit.": "드래그 또는 ←/→로 너비를 조절하고, 더블클릭으로 내용에 맞춥니다.",
+  "$(check) Copied {0} names.": "$(check) 이름 {0}개를 복사했습니다.",
+  "All selected objects require an active, writable database connection.": "선택한 모든 객체에 대해 활성 상태의 쓰기 가능한 DB 연결이 필요합니다.",
+  "Cannot drop the selected object \"{0}\".": "선택한 객체 \"{0}\"을(를) 삭제할 수 없습니다.",
+  "The database connection changed. Select the objects again.": "DB 연결이 변경되었습니다. 삭제할 객체를 다시 선택하세요.",
+  "Commit or roll back the open transaction before dropping schema objects.": "객체를 삭제하기 전에 열려 있는 트랜잭션을 커밋하거나 롤백하세요.",
+  "Drop Objects": "객체 삭제",
+  "Drop {0} selected database objects?": "선택한 데이터베이스 객체 {0}개를 삭제하시겠습니까?",
+  "Dropped {0} of {1} selected database objects.": "선택한 데이터베이스 객체 {1}개 중 {0}개를 삭제했습니다.",
+  "Executed {0} of {1} drops. Commit the open PostgreSQL transaction to apply its changes.": "삭제 구문 {1}개 중 {0}개를 실행했습니다. PostgreSQL 트랜잭션을 커밋하면 변경이 반영됩니다."
+}

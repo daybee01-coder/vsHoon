@@ -55,9 +55,11 @@ DBConn adds a second bounded capability without exposing a new extension-host AP
 ```text
 extensions/vshoon-dbconn package.json
   -> vshoon.ui.modalWebviews (bundled extensions only)
+     -> modal editor (bundled popups may be dragged past the window edges),
+        or native auxiliary editor window for presentation: "window"
   -> validated source-id/view-type registry
-  -> MainThreadWebviewPanels selects MODAL_GROUP
-  -> upstream ModalEditorPart owns focus trapping, accessibility and dismissal
+  -> MainThreadWebviewPanels selects MODAL_GROUP or AUX_WINDOW_GROUP
+  -> upstream owns modal or native window lifecycle and accessibility
 ```
 
 The extension continues to create an ordinary `WebviewPanel`. VShoon changes only its target

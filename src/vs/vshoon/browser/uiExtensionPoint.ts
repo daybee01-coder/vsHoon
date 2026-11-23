@@ -87,6 +87,11 @@ const modalWebviewSchema: IJSONSchema = {
 			pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]*$',
 			description: localize('vshoon.ui.modalWebviews.viewType', "Webview panel type to open in a modal editor.")
 		},
+		presentation: {
+			type: 'string',
+			enum: ['window'],
+			description: localize('vshoon.ui.modalWebviews.presentation', "Open this panel in a separate desktop window.")
+		},
 		size: {
 			type: 'object',
 			additionalProperties: false,

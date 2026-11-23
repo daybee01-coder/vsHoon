@@ -448,7 +448,20 @@ button:disabled {
   min-height: 60px;
   overflow: auto;
   outline: none;
-  padding: 2px 0;
+  /* 위아래 여백은 main.js 의 RESULTS_PADDING 으로 행 위치에 넣는다. */
+  padding: 0;
+}
+
+/* 보이는 행만 그리는 목록. 전체 행 높이만큼의 영역 안에 행을 절대 위치로 놓는다. */
+.results-canvas {
+  position: relative;
+}
+
+.results-canvas .match-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
 }
 
 /* IntelliJ 처럼 파일 그룹 없이 평면 목록으로 보여준다.

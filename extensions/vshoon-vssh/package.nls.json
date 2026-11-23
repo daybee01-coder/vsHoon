@@ -1,0 +1,3 @@
+{
+  "vssh.closeSidebarOnConnect.description": "Close the Primary Side Bar when connecting to SSH or WSL."
+}

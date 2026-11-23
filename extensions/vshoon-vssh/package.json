@@ -1,5 +1,6 @@
 {
   "name": "vshoon-vssh",
+  "l10n": "./l10n",
   "displayName": "VSsh",
   "description": "폴더로 정리하는 세션 관리와 SFTP를 지원하는 SSH 리모트 터미널 확장 (PuTTY 세션 가져오기 지원)",
   "version": "0.0.1",
@@ -158,6 +159,16 @@
         "icon": "$(list-unordered)"
       },
       {
+        "command": "vssh.sftp.uploadFromExplorer",
+        "title": "SFTP로 업로드",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "vssh.sftp.revealInLocalPanel",
+        "title": "SFTP 로컬 패널에서 열기",
+        "icon": "$(folder-opened)"
+      },
+      {
         "command": "vssh.hostkey.manage",
         "title": "호스트 키 관리"
       },
@@ -170,6 +181,11 @@
         "command": "vssh.terminal.toggleBroadcast",
         "title": "멀티세션 동시입력 켜기/끄기",
         "icon": "$(broadcast)"
+      },
+      {
+        "command": "vssh.terminal.reconnect",
+        "title": "SSH 다시 연결",
+        "icon": "$(debug-restart)"
       }
     ],
     "menus": {
@@ -292,6 +308,39 @@
           "command": "vssh.session.folder.delete",
           "when": "view == vssh.sessions && viewItem == sessionFolder"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "vssh.sftp.uploadFromExplorer",
+          "when": "vssh.connected && resourceScheme == file && !explorerResourceIsFolder",
+          "group": "vssh@1"
+        },
+        {
+          "command": "vssh.sftp.revealInLocalPanel",
+          "when": "vssh.connected && resourceScheme == file && explorerResourceIsFolder",
+          "group": "vssh@2"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "vssh.terminal.reconnect",
+          "when": "resourceScheme == vscode-terminal && vssh.hasSshTerminal",
+          "group": "1_vssh@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vssh.sftp.uploadFromExplorer",
+          "when": "false"
+        },
+        {
+          "command": "vssh.sftp.revealInLocalPanel",
+          "when": "false"
+        },
+        {
+          "command": "vssh.terminal.reconnect",
+          "when": "vssh.hasSshTerminal"
+        }
       ]
     },
     "keybindings": [
@@ -314,6 +363,11 @@
     "configuration": {
       "title": "VSsh",
       "properties": {
+        "vssh.closeSidebarOnConnect": {
+          "type": "boolean",
+          "default": false,
+          "description": "%vssh.closeSidebarOnConnect.description%"
+        },
         "vssh.terminal.fontFamily": {
           "type": "string",
           "default": "",
@@ -333,6 +387,11 @@
           ],
           "default": "UTF-8",
           "description": "기본 터미널 문자 인코딩 (세션별 설정으로 덮어쓸 수 있음)"
+        },
+        "vssh.terminal.mouseReporting": {
+          "type": "boolean",
+          "default": false,
+          "description": "SSH 터미널에서 vim, less, tmux 같은 원격 프로그램이 마우스를 쓰도록 허용합니다. 끄면(기본값) 드래그가 항상 터미널 선택이 되어 바로 복사됩니다. 켜면 드래그가 원격 프로그램으로 전달되며, 이때는 Shift+드래그로 선택합니다. 새로 연결한 터미널부터 적용됩니다."
         },
         "vssh.hostkey.strictChecking": {
           "type": "boolean",

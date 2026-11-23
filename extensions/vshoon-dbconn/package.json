@@ -1,5 +1,6 @@
 {
   "name": "vshoon-dbconn",
+  "l10n": "./l10n",
   "displayName": "DBConn — SQL Client for MySQL/MariaDB/PostgreSQL/Oracle",
   "description": "VS Code 통합 데이터베이스 클라이언트. 스키마 인식 자동완성, 커서 위치 쿼리 실행, 하단 결과 그리드, 누수 없는 커넥션 풀/트랜잭션 관리.",
   "version": "0.1.0",
@@ -346,6 +347,11 @@
         "category": "DBConn"
       },
       {
+        "command": "dbconn.dropObjects",
+        "title": "%dbconn.dropObjects%",
+        "category": "DBConn"
+      },
+      {
         "command": "dbconn.showPoolStats",
         "title": "커넥션 풀 진단",
         "category": "DBConn"
@@ -522,12 +528,12 @@
         },
         {
           "command": "dbconn.showObjectDetails",
-          "when": "view == dbconn.connections && viewItem =~ /^(table|view|sequence|function|procedure|package|synonym|type|column)$/",
+          "when": "view == dbconn.connections && viewItem =~ /^(table|view|materialized-view|sequence|function|procedure|package|synonym|type|column)$/",
           "group": "2_query@0"
         },
         {
           "command": "dbconn.selectTop",
-          "when": "view == dbconn.connections && viewItem =~ /^(table|view)$/",
+          "when": "view == dbconn.connections && viewItem =~ /^(table|view|materialized-view)$/",
           "group": "2_query@1"
         },
         {
@@ -549,6 +555,11 @@
           "command": "dbconn.copyConnectionUrl",
           "when": "view == dbconn.connections && viewItem =~ /^connection\\./",
           "group": "9_copy@2"
+        },
+        {
+          "command": "dbconn.dropObjects",
+          "when": "view == dbconn.connections && viewItem =~ /^(table|view|materialized-view|sequence|function|procedure|package|synonym|type)$/",
+          "group": "10_delete@1"
         },
         {
           "command": "dbconn.history.openInEditor",
@@ -656,6 +667,10 @@
         },
         {
           "command": "dbconn.copyTreeItem",
+          "when": "false"
+        },
+        {
+          "command": "dbconn.dropObjects",
           "when": "false"
         },
         {
@@ -773,14 +788,14 @@
         "dbconn.execution.autoLoadMore": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "결과 그리드를 맨 아래까지 스크롤하면 다음 묶음을 이어서 조회합니다. 끄면 툴바의 `더 불러오기`/쪽 이동 단추로만 가져옵니다."
+          "markdownDescription": "결과 그리드의 스크롤이 70%에 이르면 다음 묶음을 이어서 조회합니다. 끄면 사용자가 요청할 때만 다음 행을 가져옵니다."
         },
         "dbconn.execution.maxLoadedRows": {
           "type": "number",
           "default": 50000,
           "minimum": 1000,
           "maximum": 1000000,
-          "markdownDescription": "스크롤로 자동 조회할 때 한 결과에 쌓아 둘 행 수 상한. 여기에 닿으면 자동 조회를 멈춥니다(`더 불러오기` 단추로는 계속 가져올 수 있습니다)."
+          "markdownDescription": "스크롤로 자동 조회할 때 한 결과에 쌓아 둘 행 수 상한. `더 불러오기`와 `Ctrl+A`로 요청하는 조회에는 적용하지 않습니다."
         },
         "dbconn.execution.productionGuard": {
           "type": "string",

@@ -119,30 +119,57 @@ button:hover {
 
 .pane-cols,
 .row {
+  --name-width: var(--column-name, max(88px, calc(100cqw - 344px)));
+  --size-width: var(--column-size, 78px);
+  --mtime-width: var(--column-mtime, 132px);
+  --mode-width: var(--column-mode, 118px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 78px 132px 118px;
+  grid-template-columns: var(--name-width) var(--size-width) var(--mtime-width) var(--mode-width);
+  min-width: calc(var(--name-width) + var(--size-width) + var(--mtime-width) + var(--mode-width) + 16px);
   align-items: center;
 }
 
 .pane-cols {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   padding: 2px 8px;
   border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  background: var(--vscode-panel-background, var(--vscode-editor-background));
   font-size: 0.82em;
   color: var(--vscode-descriptionForeground);
   user-select: none;
 }
 
-.pane-cols span {
+.pane-cols [data-sort] {
+  position: relative;
+  padding-right: 8px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.pane-cols span.sorted::after {
+.pane-cols .sorted::after {
   content: attr(data-dir);
   margin-left: 3px;
   font-size: 0.9em;
+}
+
+.column-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resizer:hover,
+.column-resizer:focus-visible,
+.column-resizer.dragging {
+  background: var(--vscode-focusBorder);
 }
 
 .pane-cols .c-size,
@@ -157,6 +184,7 @@ button:hover {
 
 /* ---- 파일 목록 ---- */
 .pane-list {
+  container-type: inline-size;
   flex: 1;
   overflow: auto;
   outline: none;
@@ -194,6 +222,19 @@ button:hover {
 
 .row.selected {
   background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.25));
+}
+
+.rename-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-focusBorder);
+  outline: none;
+  user-select: text;
 }
 
 .pane-list:focus-within .row.selected {

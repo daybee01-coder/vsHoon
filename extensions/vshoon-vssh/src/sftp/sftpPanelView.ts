@@ -10,7 +10,7 @@ import { HostKeyStore } from '../ssh/hostKeyStore';
 import { SshFileSession } from '../ssh/sshFileSession';
 import { ActiveSessionManager } from './activeSessionManager';
 import { AsyncSemaphore } from './asyncSemaphore';
-import { FileSession, joinRemotePath } from './fileSession';
+import { FileSession, joinRemotePath, RemoteEntry } from './fileSession';
 import { LocalFileSession } from './localFileSession';
 import { RemoteFileEditorManager } from './remoteFileEditor';
 import { SftpFileSystemProvider } from './sftpFileSystemProvider';
@@ -18,17 +18,29 @@ import { cdTerminalToPath } from './sftpTerminalSync';
 import { TransferItem, TransferQueue } from './transferQueue';
 
 type Pane = 'local' | 'remote';
+type EntryOperation = 'copy' | 'move' | 'delete';
 
 interface InboundMessage {
   type: string;
   pane?: Pane;
   from?: Pane;
   name?: string;
+  newName?: string;
+  listingId?: number;
+  targetListingId?: number;
   names?: string[];
   path?: string;
   intoDir?: string;
+  intoParent?: boolean;
   id?: string;
   paths?: string[];
+}
+
+interface PaneListing {
+  readonly id: number;
+  readonly directory: string;
+  readonly session: FileSession;
+  readonly entries: ReadonlyMap<string, RemoteEntry>;
 }
 
 const LOCAL_PATH_KEY = 'vssh.sftp.localPath';
@@ -63,6 +75,9 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   private readonly createdRemoteDirs = new WeakMap<FileSession, Set<string>>();
   private readonly remoteFileEditor: RemoteFileEditorManager;
   private terminalFollowGeneration = 0;
+  private readonly listingRequests: Record<Pane, number> = { local: 0, remote: 0 };
+  private readonly paneListings: Partial<Record<Pane, PaneListing>> = {};
+  private readonly busyPanes = new Set<Pane>();
   private seq = 0;
 
   constructor(
@@ -164,6 +179,29 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     await this.navigate('remote', target);
   }
 
+  /**
+   * 하단 패널에 SFTP 뷰를 띄운다. 이미 한 번 그려진 뷰는 포커스를 옮기지 않고 보여 준다.
+   * 아직 그려진 적이 없으면 포커스 명령으로 열 수밖에 없어 true(포커스가 옮겨 감)를 돌려준다.
+   */
+  async reveal(): Promise<boolean> {
+    if (this.view) {
+      this.view.show(true);
+      return false;
+    }
+    await vscode.commands.executeCommand('vssh.sftp.focus');
+    return true;
+  }
+
+  /** 탐색기 우클릭 업로드용: 로컬 파일·폴더를 원격 패널이 지금 보고 있는 폴더로 보낸다. */
+  async uploadToRemote(paths: string[]): Promise<void> {
+    await this.dropFromOs('remote', paths);
+  }
+
+  /** 탐색기 폴더 우클릭용: 로컬 패널을 그 폴더로 옮긴다. */
+  async navigateLocal(folder: string): Promise<void> {
+    await this.navigate('local', folder);
+  }
+
   /** 활성 터미널이 보고한 경로를 조용히 검증한 뒤 원격 패널에 반영한다. */
   async followTerminalDirectory(session: FileSession, target: string): Promise<void> {
     const generation = ++this.terminalFollowGeneration;
@@ -194,7 +232,7 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
 
     this.remotePath = target;
     this.postState();
-    this.post({ type: 'list', pane: 'remote', path: target, entries });
+    this.publishListing('remote', ++this.listingRequests.remote, target, session, entries);
   }
 
   // ---- 사용자 변경 (오버라이드) ------------------------------------------------
@@ -327,14 +365,16 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   private async onMessage(msg: InboundMessage): Promise<void> {
     if (msg.pane !== undefined && msg.pane !== 'local' && msg.pane !== 'remote') return;
     if (msg.from !== undefined && msg.from !== 'local' && msg.from !== 'remote') return;
-    if (msg.name !== undefined && this.leafNameError(msg.name)) return;
+    if (msg.name !== undefined && (typeof msg.name !== 'string' || this.leafNameError(msg.name))) return;
     if (
       msg.names !== undefined &&
       (!Array.isArray(msg.names) || msg.names.some((name) => typeof name !== 'string' || !!this.leafNameError(name)))
     ) {
       return;
     }
-    if (msg.intoDir !== undefined && this.leafNameError(msg.intoDir)) return;
+    if (msg.intoDir !== undefined && (typeof msg.intoDir !== 'string' || this.leafNameError(msg.intoDir))) {
+      return;
+    }
     if (
       msg.paths !== undefined &&
       (!Array.isArray(msg.paths) || msg.paths.some((p) => typeof p !== 'string' || !path.isAbsolute(p)))
@@ -354,6 +394,9 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       case 'refresh':
         if (msg.pane) await this.listPane(msg.pane);
         break;
+      case 'refreshBoth':
+        this.refreshBoth();
+        break;
       case 'up':
         if (msg.pane) await this.enter(msg.pane, '..');
         break;
@@ -370,22 +413,51 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         if (msg.pane && msg.name) await this.openSymlink(msg.pane, msg.name);
         break;
       case 'transfer':
-        if (msg.from && msg.names) await this.startTransfer(msg.from, msg.names, msg.intoDir);
+        if (msg.from && msg.names) {
+          const to = msg.from === 'local' ? 'remote' : 'local';
+          if (msg.listingId !== undefined && !this.getListing(msg.from, msg.listingId, msg.names)) {
+            return;
+          }
+          if (msg.targetListingId !== undefined) {
+            const target = this.getListing(to, msg.targetListingId, []);
+            if (!target || (msg.intoDir && !target.entries.get(msg.intoDir)?.isDirectory)) {
+              return;
+            }
+          }
+          await this.startTransfer(msg.from, msg.names, msg.intoDir);
+        }
         break;
       case 'osFileDrop':
         if (msg.pane && msg.paths?.length) await this.dropFromOs(msg.pane, msg.paths, msg.intoDir);
         break;
       case 'osDragStart':
-        if (msg.pane && msg.names?.length) await this.startOsDrag(msg.pane, msg.names);
+        if (msg.pane && msg.names?.length && this.getListing(msg.pane, msg.listingId, msg.names)) {
+          await this.startOsDrag(msg.pane, msg.names);
+        }
         break;
       case 'mkdirRequest':
         if (msg.pane) await this.mkdirInteractive(msg.pane);
         break;
-      case 'renameRequest':
-        if (msg.pane && msg.name) await this.renameInteractive(msg.pane, msg.name);
+      case 'rename':
+        if (msg.pane && msg.name && typeof msg.newName === 'string' && typeof msg.listingId === 'number') {
+          await this.renameEntry(msg.pane, msg.listingId, msg.name, msg.newName);
+        }
         break;
       case 'deleteRequest':
-        if (msg.pane && msg.names) await this.deleteInteractive(msg.pane, msg.names);
+      case 'copyRequest':
+      case 'moveRequest':
+        if (msg.pane && msg.names?.length) {
+          const listing = this.getListing(msg.pane, msg.listingId, msg.names);
+          if (!listing) {
+            return;
+          }
+          if (msg.type === 'deleteRequest') {
+            await this.deleteInteractive(msg.pane, listing, msg.names);
+          } else {
+            await this.relocateEntries(msg.pane, listing, msg.names, msg.type === 'copyRequest' ? 'copy' : 'move',
+              msg.intoDir, msg.intoParent === true);
+          }
+        }
         break;
       case 'openTerminalHere':
         cdTerminalToPath(this.activeSessionManager, this.remotePath);
@@ -456,11 +528,16 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     await this.listPane('remote');
   }
 
-  private async listPane(pane: Pane): Promise<void> {
-    if (!this.view) return;
+  private async listPane(pane: Pane, selectedName?: string): Promise<void> {
+    const view = this.view;
+    if (!view) return;
+    const id = ++this.listingRequests[pane];
     const session = pane === 'local' ? this.localSession : this.remoteSession;
     const dir = pane === 'local' ? this.localPath : this.remotePath;
+    const isCurrent = () => this.view === view && this.listingRequests[pane] === id &&
+      (pane === 'local' ? this.localPath === dir : this.remoteSession === session && this.remotePath === dir);
     if (!session) {
+      delete this.paneListings[pane];
       this.post({
         type: 'list',
         pane,
@@ -472,10 +549,34 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     }
     try {
       const entries = await session.readdir(dir);
-      this.post({ type: 'list', pane, path: dir, entries });
+      if (!isCurrent()) return;
+      this.publishListing(pane, id, dir, session, entries, selectedName);
     } catch (err) {
+      if (!isCurrent()) return;
+      delete this.paneListings[pane];
       this.post({ type: 'list', pane, path: dir, entries: [], error: describe(err) });
     }
+  }
+
+  private publishListing(
+    pane: Pane, id: number, directory: string, session: FileSession, entries: RemoteEntry[], selectedName?: string
+  ): void {
+    this.paneListings[pane] = { id, directory, session, entries: new Map(entries.map(entry => [entry.name, entry])) };
+    this.post({ type: 'list', pane, path: directory, entries, listingId: id, sessionId: session.id, selectedName });
+  }
+
+  private isListingLocationCurrent(pane: Pane, listing: PaneListing): boolean {
+    return pane === 'local' ? this.localPath === listing.directory
+      : this.remoteSession === listing.session && this.remotePath === listing.directory;
+  }
+
+  private getListing(pane: Pane, id: number | undefined, names: readonly string[]): PaneListing | undefined {
+    const listing = this.paneListings[pane];
+    if (listing && listing.id === id && this.isListingLocationCurrent(pane, listing) &&
+      names.every(name => listing.entries.has(name))) {
+      return listing;
+    }
+    return undefined;
   }
 
   private async enter(pane: Pane, name: string): Promise<void> {
@@ -593,62 +694,192 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
     await this.listPane(pane);
   }
 
-  private async renameInteractive(pane: Pane, name: string): Promise<void> {
-    const session = this.sessionFor(pane);
-    if (!session) return;
-    const newName = await vscode.window.showInputBox({
-      title: 'VSsh: 이름 변경',
-      value: name,
-      ignoreFocusOut: true,
-      validateInput: (v) => this.leafNameError(v),
-    });
-    if (!newName || newName === name) return;
-    try {
-      await session.rename(this.childPath(pane, name), this.childPath(pane, newName));
-    } catch (err) {
-      vscode.window.showErrorMessage(`VSsh: 이름 변경 실패 - ${describe(err)}`);
+  private async renameEntry(pane: Pane, listingId: number, name: string, newName: string): Promise<void> {
+    const listing = this.getListing(pane, listingId, [name]);
+    if (!listing || newName === name || this.busyPanes.has(pane)) {
       return;
     }
-    await this.listPane(pane);
+    const { session, directory } = listing;
+    const error = this.leafNameError(newName);
+    if (error) {
+      void vscode.window.showErrorMessage(error);
+      return;
+    }
+    if (listing.entries.has(newName)) {
+      void vscode.window.showErrorMessage(vscode.l10n.t('An entry named "{0}" already exists.', newName));
+      return;
+    }
+    const join = pane === 'local' ? path.join : joinRemotePath;
+    this.busyPanes.add(pane);
+    try {
+      await session.rename(join(directory, name), join(directory, newName));
+      if (this.isListingLocationCurrent(pane, listing)) {
+        await this.listPane(pane, newName);
+      }
+    } catch (err) {
+      vscode.window.showErrorMessage(`VSsh: 이름 변경 실패 - ${describe(err)}`);
+    } finally {
+      this.busyPanes.delete(pane);
+    }
   }
 
-  private async deleteInteractive(pane: Pane, names: string[]): Promise<void> {
-    const session = this.sessionFor(pane);
-    if (!session || names.length === 0) return;
-    const label = names.length === 1 ? `"${names[0]}"` : `${names.length}개 항목`;
+  private async deleteInteractive(pane: Pane, listing: PaneListing, names: string[]): Promise<void> {
+    if (this.busyPanes.has(pane)) {
+      return;
+    }
+    const { session, directory } = listing;
+    const deleteLabel = vscode.l10n.t('Delete');
     const choice = await vscode.window.showWarningMessage(
-      `${label}을(를) 삭제하시겠습니까? (폴더는 하위 항목까지 모두 삭제됩니다)`,
-      { modal: true },
-      '삭제'
+      vscode.l10n.t('Permanently delete {0} selected entries?', new Set(names).size),
+      { modal: true, detail: `${session.label} · ${directory}\n\n${[...new Set(names)].join('\n')}` },
+      deleteLabel
     );
-    if (choice !== '삭제') return;
+    if (choice !== deleteLabel || !this.getListing(pane, listing.id, names)) {
+      return;
+    }
 
-    const dir = pane === 'local' ? this.localPath : this.remotePath;
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'VSsh: 삭제 중', cancellable: false },
-      async (progress) => {
-        let byName: Map<string, boolean>;
-        try {
-          byName = new Map((await session.readdir(dir)).map((e) => [e.name, e.isDirectory]));
-        } catch {
-          byName = new Map();
+    const join = pane === 'local' ? path.join : joinRemotePath;
+    await this.runEntryOperation(pane, listing, 'delete', names, async () => {
+      const currentEntries = new Map((await session.readdir(directory)).map(entry => [entry.name, entry]));
+      return async name => {
+        const entry = currentEntries.get(name);
+        if (!entry) {
+          return;
         }
-        for (const name of names) {
-          progress.report({ message: name });
-          const full = this.childPath(pane, name);
+        const full = join(directory, name);
+        if (entry.isDirectory && !entry.isSymbolicLink) {
+          await this.deleteRecursive(session, full, pane === 'local');
+        } else {
+          await session.unlink(full);
+        }
+      };
+    });
+  }
+
+  private async relocateEntries(
+    pane: Pane, listing: PaneListing, names: string[], operation: 'copy' | 'move', intoDir?: string, intoParent = false
+  ): Promise<void> {
+    if (this.busyPanes.has(pane)) {
+      return;
+    }
+    const { session, directory } = listing;
+    const paths = pane === 'local' ? path : path.posix;
+    let target: string;
+    if (intoDir) {
+      if (!listing.entries.get(intoDir)?.isDirectory || (operation === 'move' && names.includes(intoDir))) {
+        return;
+      }
+      target = paths.join(directory, intoDir);
+    } else if (intoParent) {
+      target = paths.dirname(directory);
+    } else {
+      const input = await vscode.window.showInputBox({
+        title: operation === 'copy' ? vscode.l10n.t('Copy to Folder') : vscode.l10n.t('Move to Folder'),
+        prompt: vscode.l10n.t('Enter an existing folder path, absolute or relative to the current folder.'),
+        value: directory,
+        ignoreFocusOut: true,
+      });
+      if (!input?.trim() || !this.getListing(pane, listing.id, names)) {
+        return;
+      }
+      target = paths.resolve(directory, input);
+    }
+
+    await this.runEntryOperation(pane, listing, operation, names, async () => {
+      const sourceDirectory = await session.realpath(directory);
+      const targetDirectory = await session.realpath(target);
+      if (!paths.relative(sourceDirectory, targetDirectory)) {
+        throw new Error(vscode.l10n.t('Choose a different destination folder.'));
+      }
+      const nameKey = (name: string) => pane === 'local' && process.platform === 'win32' ? name.toLowerCase() : name;
+      const existing = new Set((await session.readdir(targetDirectory)).map(entry => nameKey(entry.name)));
+      return async name => {
+        const source = paths.join(sourceDirectory, name);
+        const destination = paths.join(targetDirectory, name);
+        const relative = paths.relative(source, targetDirectory);
+        if (!relative || (!paths.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${paths.sep}`))) {
+          throw new Error(vscode.l10n.t('An entry cannot be placed inside itself.'));
+        }
+        if (existing.has(nameKey(name))) {
+          throw new Error(vscode.l10n.t('An entry named "{0}" already exists.', name));
+        }
+        if (operation === 'move') {
           try {
-            if (byName.get(name)) {
-              await this.deleteRecursive(session, full, pane === 'local');
-            } else {
-              await session.unlink(full);
-            }
+            await session.rename(source, destination);
           } catch (err) {
-            vscode.window.showErrorMessage(`VSsh: "${name}" 삭제 실패 - ${describe(err)}`);
+            if (pane !== 'local' || (err as NodeJS.ErrnoException).code !== 'EXDEV') {
+              throw err;
+            }
+            const stats = await fs.promises.lstat(source);
+            await this.copyEntry(session, source, destination, true);
+            if (stats.isDirectory()) {
+              await session.rmdir(source);
+            } else {
+              await session.unlink(source);
+            }
+          }
+        } else {
+          await this.copyEntry(session, source, destination, pane === 'local');
+        }
+        existing.add(nameKey(name));
+      };
+    });
+  }
+
+  private async copyEntry(session: FileSession, source: string, destination: string, isLocal: boolean): Promise<void> {
+    const paths = isLocal ? path : path.posix;
+    const staging = paths.join(paths.dirname(destination), `.vssh-copy-${crypto.randomUUID()}`);
+    await session.mkdir(staging);
+    try {
+      const stagedEntry = paths.join(staging, paths.basename(destination));
+      await session.copy(source, stagedEntry);
+      await session.rename(stagedEntry, destination);
+    } finally {
+      await this.deleteRecursive(session, staging, isLocal);
+    }
+  }
+
+  private async runEntryOperation(
+    pane: Pane, listing: PaneListing, operation: EntryOperation, names: string[],
+    prepare: () => Promise<(name: string) => Promise<void>>
+  ): Promise<void> {
+    if (!this.isListingLocationCurrent(pane, listing) || this.busyPanes.has(pane)) {
+      return;
+    }
+    this.busyPanes.add(pane);
+    const titles = {
+      copy: vscode.l10n.t('VSsh: Copying entries'),
+      move: vscode.l10n.t('VSsh: Moving entries'),
+      delete: vscode.l10n.t('VSsh: Deleting entries'),
+    };
+    const errors: string[] = [];
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: titles[operation] },
+        async progress => {
+          const run = await prepare();
+          for (const name of new Set(names)) {
+            progress.report({ message: name });
+            try {
+              await run(name);
+            } catch (err) {
+              errors.push(`${name}: ${describe(err)}`);
+            }
           }
         }
+      );
+    } catch (err) {
+      errors.push(describe(err));
+    } finally {
+      try {
+        await this.listPane(pane);
+      } finally {
+        this.busyPanes.delete(pane);
       }
-    );
-    await this.listPane(pane);
+    }
+    if (errors.length) {
+      void vscode.window.showErrorMessage(vscode.l10n.t('VSsh: Some file operations failed.\n{0}', errors.join('\n')));
+    }
   }
 
   private async deleteRecursive(session: FileSession, dir: string, isLocal: boolean): Promise<void> {
@@ -658,8 +889,9 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       return;
     }
     for (const entry of await session.readdir(dir)) {
+      this.assertSafeRemoteChildName(entry.name);
       const child = joinRemotePath(dir, entry.name);
-      if (entry.isDirectory) {
+      if (entry.isDirectory && !entry.isSymbolicLink) {
         await this.deleteRecursive(session, child, false);
       } else {
         await session.unlink(child);
@@ -710,9 +942,10 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
       return;
     }
 
+    const directory = this.localPath;
     const paths: string[] = [];
     for (const name of names) {
-      const candidate = path.join(this.localPath, name);
+      const candidate = path.join(directory, name);
       try {
         await fs.promises.stat(candidate);
         paths.push(candidate);
@@ -1153,8 +1386,7 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
   private assertSafeRemoteChildName(name: string): void {
     if (name === '.' || name === '..' || /[\\/]/.test(name) || /\0|[\x01-\x1f\x7f]/.test(name)) {
       throw new Error(
-        `원격 서버가 안전하지 않은 파일 이름을 반환했습니다: ${JSON.stringify(name)}. ` +
-          `경로 구분자·상위 경로(..)·제어 문자가 포함되어 다운로드를 중단했습니다.`
+        vscode.l10n.t('The remote server returned an unsafe entry name: {0}.', JSON.stringify(name))
       );
     }
   }
@@ -1401,7 +1633,12 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
 <link rel="stylesheet" href="${styleUri}">
 <title>SFTP</title>
 </head>
-<body>
+<body data-rename-label="${vscode.l10n.t('Rename')}"
+      data-copy-label="${vscode.l10n.t('Copy to Folder…')}"
+      data-move-label="${vscode.l10n.t('Move to Folder…')}"
+      data-delete-label="${vscode.l10n.t('Delete')}"
+      data-native-drag-label="${vscode.l10n.t('Hold Alt while dragging to export to the system file manager.')}"
+      data-resize-column-label="${vscode.l10n.t('Drag or use Left/Right Arrow to resize. Double-click to reset.')}">
 <div id="app">
   <div id="panes">
     <section class="pane" data-pane="local">
@@ -1416,13 +1653,15 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         </span>
       </div>
       <input class="pane-path" spellcheck="false" autocomplete="off" />
-      <div class="pane-cols">
-        <span class="c-name" data-sort="name">이름</span>
-        <span class="c-size" data-sort="size">크기</span>
-        <span class="c-mtime" data-sort="mtime">수정일</span>
-        <span class="c-mode" data-sort="mode">권한</span>
+      <div class="pane-list" tabindex="0">
+        <div class="pane-cols">
+          <span class="c-name" data-sort="name">이름</span>
+          <span class="c-size" data-sort="size">크기</span>
+          <span class="c-mtime" data-sort="mtime">수정일</span>
+          <span class="c-mode" data-sort="mode">권한</span>
+        </div>
+        <div class="pane-entries"></div>
       </div>
-      <div class="pane-list" tabindex="0"></div>
       <div class="pane-foot"></div>
     </section>
 
@@ -1439,13 +1678,15 @@ export class SftpPanelView implements vscode.WebviewViewProvider {
         </span>
       </div>
       <input class="pane-path" spellcheck="false" autocomplete="off" />
-      <div class="pane-cols">
-        <span class="c-name" data-sort="name">이름</span>
-        <span class="c-size" data-sort="size">크기</span>
-        <span class="c-mtime" data-sort="mtime">수정일</span>
-        <span class="c-mode" data-sort="mode">권한</span>
+      <div class="pane-list" tabindex="0">
+        <div class="pane-cols">
+          <span class="c-name" data-sort="name">이름</span>
+          <span class="c-size" data-sort="size">크기</span>
+          <span class="c-mtime" data-sort="mtime">수정일</span>
+          <span class="c-mode" data-sort="mode">권한</span>
+        </div>
+        <div class="pane-entries"></div>
       </div>
-      <div class="pane-list" tabindex="0"></div>
       <div class="pane-foot"></div>
     </section>
   </div>

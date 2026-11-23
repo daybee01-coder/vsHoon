@@ -1,0 +1,20 @@
+{
+  "An entry named \"{0}\" already exists.": "\"{0}\" 이름의 항목이 이미 있습니다.",
+  "Drag or use Left/Right Arrow to resize. Double-click to reset.": "드래그 또는 ←/→로 너비를 조절하고, 더블클릭으로 초기화합니다.",
+  "Rename": "이름 변경",
+  "Copy to Folder…": "폴더로 복사…",
+  "Move to Folder…": "폴더로 이동…",
+  "Copy to Folder": "폴더로 복사",
+  "Move to Folder": "폴더로 이동",
+  "Delete": "삭제",
+  "Hold Alt while dragging to export to the system file manager.": "시스템 파일 탐색기로 내보내려면 Alt를 누른 채 드래그하세요.",
+  "Permanently delete {0} selected entries?": "선택한 항목 {0}개를 영구 삭제하시겠습니까? 폴더의 하위 항목도 함께 삭제됩니다.",
+  "Enter an existing folder path, absolute or relative to the current folder.": "기존 폴더의 절대 경로 또는 현재 폴더 기준 상대 경로를 입력하세요.",
+  "Choose a different destination folder.": "다른 대상 폴더를 선택하세요.",
+  "An entry cannot be placed inside itself.": "항목을 자기 자신의 하위 폴더에 넣을 수 없습니다.",
+  "The remote server returned an unsafe entry name: {0}.": "원격 서버가 안전하지 않은 항목 이름을 반환했습니다. {0}",
+  "VSsh: Copying entries": "VSsh: 항목 복사 중",
+  "VSsh: Moving entries": "VSsh: 항목 이동 중",
+  "VSsh: Deleting entries": "VSsh: 항목 삭제 중",
+  "VSsh: Some file operations failed.\n{0}": "VSsh: 일부 파일 작업이 실패했습니다.\n{0}"
+}

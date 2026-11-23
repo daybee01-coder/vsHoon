@@ -63,6 +63,10 @@ The checks worth running before a package build, none of which needs a package: 
 drive the real application; `smoke:ui-extension` fails with a missing-module error if the built-in
 extensions were never compiled, and `smoke:modal-webviews` says so up front.
 
+Run `npm run smoke:java-search` for Java Ctrl+click/F12, automatic project-cache updates and the
+separate VSearch window. It verifies that the search window moves beyond the main IDE bounds
+without a modal backdrop. DBConn and VSsh remain covered by the modal smoke test.
+
 `npm run smoke:modal-webviews -- --remember-layout` adds the layout half of VSH-0010: it resizes
 and moves each panel, closes it, opens it again and asserts the modal comes back with the geometry
 it was left at. That roughly doubles the run, so the plain form stays the default.

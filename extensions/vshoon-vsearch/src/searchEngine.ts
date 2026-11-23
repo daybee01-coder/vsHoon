@@ -8,17 +8,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Worker } from 'worker_threads';
 import { FileResult, MatchItem, SearchQuery } from './types';
-import { decodeText, escapeRegExp, isBinary } from './matcher';
-import { WorkerMessage, WorkerOptions, WorkerRequest, WorkerSearchRequest } from './searchWorker';
-import { collectDirtyTexts } from './dirtyTexts';
+import { decodeText, isBinary } from './matcher';
+import { WorkerMessage, WorkerOptions, WorkerRequest, WorkerSearchMessage, WorkerTarget } from './searchWorker';
+import { DirtyTextTracker } from './dirtyTexts';
+import { maskToRegExp, scopeOf, splitMask } from './workspaceScope';
+import { isInSkippedDirectory, SKIPPED_DIRECTORIES } from './indexablePath';
 
 export { buildMatcher, escapeRegExp, expandReplacement, findMatches, splitLines } from './matcher';
 
 /**
- * 매칭 워커가 이 시간 안에 끝나지 않으면 강제로 끊는다.
+ * 매칭 워커가 이 시간 동안 아무 응답이 없으면 강제로 끊는다.
  * 정규식 백트래킹이 폭발하면(예: `(a+)+$`) 영원히 끝나지 않기 때문이다.
+ * 워커는 검색 중 주기적으로 진행을 알리므로, 캐시가 비어 디스크를 오래 읽는 검색은 끊지 않는다.
  */
 const SEARCH_TIMEOUT_MS = 15000;
+
+/**
+ * 입력 중 연속 검색에서 이 시간 안에 확인한 파일은 다시 stat 하지 않는다.
+ * 변경은 감시 이벤트로 바로 반영하고, 패널을 열거나 창으로 돌아올 때 백그라운드에서 전체를 다시 확인한다.
+ */
+const FRESH_MS = 5000;
+
+/** 생성 이벤트가 몰릴 때(빌드, checkout) 파일 목록 재열거를 이만큼 모은다. */
+const ENUMERATE_DELAY_MS = 1000;
 
 export interface SearchStats {
   fileCount: number;
@@ -31,17 +43,20 @@ export interface EngineConfig {
   maxFiles: number;
   maxResultFiles: number;
   maxMatchesPerFile: number;
+  /** 검색 한 번에 결과로 보낼 전체 일치 개수 상한 */
+  maxTotalMatches: number;
   excludeGlobs: string[];
   maxPreviewSizeKb: number;
 }
 
 export function getConfig(): EngineConfig {
-  const c = vscode.workspace.getConfiguration('vsearch');
+  const c = vscode.workspace.getConfiguration('vsearch', null);
   return {
     maxFileSizeKb: c.get<number>('maxFileSizeKb', 5120),
     maxFiles: c.get<number>('maxFiles', 20000),
     maxResultFiles: c.get<number>('maxResultFiles', 3000),
     maxMatchesPerFile: c.get<number>('maxMatchesPerFile', 500),
+    maxTotalMatches: c.get<number>('maxTotalMatches', 20000),
     excludeGlobs: c.get<string[]>('excludeGlobs', []),
     maxPreviewSizeKb: c.get<number>('maxPreviewSizeKb', 2048)
   };
@@ -107,13 +122,6 @@ export async function readTextFile(uri: vscode.Uri, maxBytes: number): Promise<s
  * 대상 파일 수집
  * ------------------------------------------------------------------ */
 
-function splitMask(mask: string): string[] {
-  return mask
-    .split(/[,;]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
 function maskToGlobBody(mask: string): string | undefined {
   const parts = splitMask(mask);
   if (parts.length === 0) {
@@ -126,7 +134,7 @@ function maskToGlobBody(mask: string): string | undefined {
 function defaultExcludePatterns(): string[] {
   const out: string[] = [];
   for (const key of ['files.exclude', 'search.exclude']) {
-    const conf = vscode.workspace.getConfiguration().get<Record<string, unknown>>(key) ?? {};
+    const conf = vscode.workspace.getConfiguration(undefined, null).get<Record<string, unknown>>(key) ?? {};
     for (const [pattern, value] of Object.entries(conf)) {
       if (value === true) {
         out.push(pattern);
@@ -137,7 +145,7 @@ function defaultExcludePatterns(): string[] {
 }
 
 function buildExcludeGlob(config: EngineConfig): string | undefined {
-  const patterns = new Set<string>([...defaultExcludePatterns(), ...config.excludeGlobs]);
+  const patterns = new Set<string>(['**/.vshoon/cache/**', ...defaultExcludePatterns(), ...config.excludeGlobs]);
   const list = [...patterns];
   if (list.length === 0) {
     return undefined;
@@ -153,26 +161,6 @@ function isInsideWorkspace(dirPath: string): boolean {
     return normalized === root || normalized.startsWith(root + path.sep);
   });
 }
-
-function maskToRegExp(mask: string): RegExp {
-  const body = splitMask(mask)
-    .map((s) => '^' + escapeRegExp(s).replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$')
-    .join('|');
-  return new RegExp(body || '.*', 'i');
-}
-
-const FALLBACK_SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  '.svn',
-  '.hg',
-  'out',
-  'dist',
-  'build',
-  'target',
-  '.idea',
-  '.vscode-test'
-]);
 
 /** 워크스페이스 밖 디렉터리를 검색할 때 사용하는 직접 순회 방식. */
 async function walkDirectory(
@@ -201,7 +189,7 @@ async function walkDirectory(
       }
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (recursive && !FALLBACK_SKIP_DIRS.has(entry.name)) {
+        if (recursive && !SKIPPED_DIRECTORIES.has(entry.name)) {
           stack.push(full);
         }
       } else if (entry.isFile() && !isAsar(entry.name)) {
@@ -212,6 +200,12 @@ async function walkDirectory(
     }
   }
   return result;
+}
+
+/** 메모리 목록으로 처리할 수 없는 범위(워크스페이스 밖, 경로가 들어간 마스크)인지 확인한다. */
+function needsFileSearch(query: SearchQuery): boolean {
+  const useDirectory = query.scopeKind === 'directory' && query.scopePath.trim().length > 0;
+  return (useDirectory && !isInsideWorkspace(query.scopePath)) || /[\\/]/.test(query.fileMask);
 }
 
 /** 검색 대상 파일 목록을 만든다. */
@@ -261,31 +255,10 @@ export function toFileResult(uri: vscode.Uri, matches: MatchItem[], truncated: b
 
 /** 메모리에 보관할 파일 내용의 상한 */
 const CONTENT_CACHE_BYTES = 256 * 1024 * 1024;
-/** 파일 목록을 이 시간보다 오래 쓰면 결과는 그대로 쓰고 다음 검색을 위해 뒤에서 새로 만든다. */
-const FILE_LIST_REFRESH_MS = 10_000;
-const FILE_LIST_CACHE_SIZE = 4;
-
-interface FileList {
-  readonly paths: string[];
-  readonly createdAt: number;
-}
-
-interface FileListEntry {
-  list: Promise<FileList>;
-  refreshing: boolean;
-  readonly watcher: vscode.Disposable | undefined;
-}
-
-interface CompletedSearch {
-  readonly listKey: string;
-  readonly list: FileList;
-  readonly query: SearchQuery;
-  readonly matchedPaths: string[];
-}
-
 interface PendingSearch {
   readonly stats: SearchStats;
-  readonly matchedPaths: string[];
+  /** 워커가 응답했으므로 시간 제한을 다시 시작한다. */
+  readonly touch: () => void;
   readonly onBatch: (files: FileResult[]) => void;
   readonly resolve: (stats: SearchStats) => void;
   readonly reject: (error: Error) => void;
@@ -294,49 +267,115 @@ interface PendingSearch {
 export interface SearchOptions {
   /** false 이면 다음 검색이 시작되어도 끝까지 수행한다. 기본값 true */
   preemptible?: boolean;
+  /** 전체 일치 개수 상한. 0 이면 제한하지 않는다. 기본값은 설정의 maxTotalMatches */
+  maxTotalMatches?: number;
 }
 
 /**
  * 입력할 때마다 곧바로 결과를 낼 수 있게 검색 사이의 상태를 보관한다.
  *
- * - 범위별 파일 목록: 파일 생성·삭제와 설정 변경 때 버린다.
- * - 파일 내용: 워커가 메모리에 보관하고, 바뀐 파일만 다시 읽는다.
- * - 직전 결과: 검색어가 직전 검색어를 포함하도록 길어지면 직전에 일치한 파일만 다시 검사한다.
+ * - 검색마다 파일 목록과 메타데이터를 확인해 감시 이벤트가 늦어도 변경을 반영한다.
+ * - 내용과 trigram 인덱스는 워커가 보관하고, 바뀐 파일만 다시 읽고 인덱싱한다.
  */
 export class SearchEngine implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly fileLists = new Map<string, FileListEntry>();
   private readonly pending = new Map<number, PendingSearch>();
   private readonly currentSearch = new Int32Array(new SharedArrayBuffer(4));
   private worker: Worker | undefined;
   private nextId = 1;
-  private previous: CompletedSearch | undefined;
+  private disposed = false;
+  private readonly warming = new Map<number, () => void>();
+  private readonly changedPaths = new Set<string>();
+  private changeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 워크스페이스 전체 파일 목록. 검색마다 다시 열거하지 않고 감시 이벤트로 갱신한다. */
+  private workspacePaths: Set<string> | undefined;
+  /** 목록이 maxFiles 에서 잘렸으면 마스크·범위 검색은 findFiles 로 직접 찾는다. */
+  private workspaceTruncated = false;
+  private enumerating: Promise<Set<string>> | undefined;
+  private enumerateTimer: ReturnType<typeof setTimeout> | undefined;
+  private listGeneration = 0;
+  private lastRevalidate = 0;
+  private readonly dirtyTexts = new DirtyTextTracker();
 
   constructor() {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     this.disposables.push(
       watcher,
-      ...this.watch(watcher),
-      vscode.workspace.onDidChangeTextDocument((event) => {
-        if (event.document.uri.scheme === 'file' && event.contentChanges.length > 0) {
-          this.previous = undefined;
+      watcher.onDidDelete(uri => this.invalidate(uri)),
+      watcher.onDidCreate(uri => {
+        this.refresh(uri);
+        if (this.isIndexable(uri)) {
+          // 새 파일은 바로 검색 대상에 넣고, 제외 설정 반영은 곧이어 하는 재열거에 맡긴다.
+          if (this.workspacePaths && !this.workspacePaths.has(uri.fsPath)) {
+            this.workspacePaths.add(uri.fsPath);
+            this.worker?.postMessage({ type: 'filesAdd', paths: [uri.fsPath] } satisfies WorkerRequest);
+          }
+          this.scheduleEnumerate();
         }
       }),
-      vscode.workspace.onDidSaveTextDocument((document) => this.invalidate(document.uri)),
-      vscode.workspace.onDidChangeWorkspaceFolders(() => this.dropFileLists()),
-      vscode.workspace.onDidChangeConfiguration((event) => {
-        if (['files.exclude', 'search.exclude', 'vsearch'].some((section) => event.affectsConfiguration(section))) {
-          this.dropFileLists();
+      watcher.onDidChange(uri => this.refresh(uri)),
+      vscode.workspace.onDidSaveTextDocument(document => this.refresh(document.uri)),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.worker?.postMessage({ type: 'roots', roots: this.cacheRoots() } satisfies WorkerRequest);
+        this.resetFileList();
+        void this.startIndexing();
+      }),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('vsearch') || event.affectsConfiguration('files.exclude') || event.affectsConfiguration('search.exclude')) {
+          this.resetFileList();
+          void this.startIndexing();
+        }
+      }),
+      // 다른 프로그램에서 고친 파일은 감시 이벤트가 늦을 수 있으므로 창으로 돌아오면 다시 확인한다.
+      vscode.window.onDidChangeWindowState(state => {
+        if (state.focused) {
+          this.prepare();
         }
       })
     );
   }
 
+  /** Start as soon as the project is opened; no search panel is needed. */
+  async startIndexing(): Promise<void> {
+    try {
+      await this.warm({ id: 0, query: '', regex: false, caseSensitive: false, wholeWord: false, scopeKind: 'workspace', scopePath: '', recursive: true, fileMask: '' }, getConfig());
+    } catch {
+      // A closing workspace or a worker restart can interrupt background preparation.
+    }
+  }
+
+  /**
+   * 검색창을 열거나 창으로 돌아왔을 때 호출한다. 입력을 막지 않고 백그라운드에서
+   * 파일 목록을 다시 열거하고 보관 중인 내용을 디스크와 비교한다.
+   */
+  prepare(): void {
+    const now = Date.now();
+    if (this.disposed || now - this.lastRevalidate < FRESH_MS) {
+      return;
+    }
+    this.lastRevalidate = now;
+    if (this.workspacePaths) {
+      this.scheduleEnumerate(0);
+    }
+    this.worker?.postMessage({ type: 'revalidate', maxBytes: getConfig().maxFileSizeKb * 1024 } satisfies WorkerRequest);
+  }
+
   /** 검색어를 입력하기 전에 범위의 파일 목록과 내용을 미리 읽어 둔다. */
   async warm(query: SearchQuery, config: EngineConfig): Promise<void> {
-    const list = await this.getFileList(query, config, undefined);
-    const request: WorkerRequest = { type: 'warm', paths: list.paths, maxBytes: config.maxFileSizeKb * 1024 };
-    this.ensureWorker().postMessage(request);
+    const source = new vscode.CancellationTokenSource();
+    try {
+      const target = await this.collectTarget(query, config, source.token);
+      if (!this.disposed && target.paths?.length !== 0) {
+        const id = this.nextId++;
+        const request: WorkerRequest = { type: 'warm', id, ...target, maxBytes: config.maxFileSizeKb * 1024 };
+        await new Promise<void>(resolve => {
+          this.warming.set(id, resolve);
+          this.ensureWorker().postMessage(request);
+        });
+      }
+    } finally {
+      source.dispose();
+    }
   }
 
   /**
@@ -363,95 +402,78 @@ export class SearchEngine implements vscode.Disposable {
       Atomics.store(this.currentSearch, 0, id);
     }
 
-    const listKey = fileListKey(query, config);
-    const list = await this.getFileList(query, config, token);
-    if (!list || token.isCancellationRequested || list.paths.length === 0) {
+    const target = await this.collectTarget(query, config, token);
+    if (this.disposed || token.isCancellationRequested || target.paths?.length === 0 || (preemptible && Atomics.load(this.currentSearch, 0) !== id)) {
       return empty;
     }
-    const paths = this.narrow(listKey, list, query) ?? list.paths;
-    return this.match(id, preemptible, paths, query, config, token, onBatch, (matchedPaths) => {
-      this.previous = { listKey, list, query, matchedPaths };
-    });
+    return this.match(id, preemptible, target, query, config, options.maxTotalMatches ?? config.maxTotalMatches, token, onBatch);
   }
 
   dispose(): void {
+    this.disposed = true;
+    clearTimeout(this.changeTimer);
+    clearTimeout(this.enumerateTimer);
+    this.changedPaths.clear();
     this.rejectPending(new Error('검색이 중단되었습니다.'));
     void this.worker?.terminate();
     this.worker = undefined;
-    this.dropFileLists();
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();
     }
   }
 
-  /** 직전 검색 결과로 대상을 줄일 수 있으면 줄인 목록을 돌려준다. */
-  private narrow(listKey: string, list: FileList, query: SearchQuery): string[] | undefined {
-    const previous = this.previous;
-    if (
-      !previous ||
-      previous.listKey !== listKey ||
-      previous.list !== list ||
-      query.regex ||
-      query.wholeWord ||
-      previous.query.regex ||
-      previous.query.wholeWord ||
-      previous.query.caseSensitive !== query.caseSensitive
-    ) {
-      return undefined;
-    }
-    if (query.caseSensitive) {
-      return query.query.includes(previous.query.query) ? previous.matchedPaths : undefined;
-    }
-    // 대소문자 무시 비교가 toLowerCase 비교와 같다고 확신할 수 있는 ASCII 검색어만 줄인다.
-    const ascii = /^[\x20-\x7e]*$/;
-    if (!ascii.test(previous.query.query) || !ascii.test(query.query)) {
-      return undefined;
-    }
-    return query.query.toLowerCase().includes(previous.query.query.toLowerCase()) ? previous.matchedPaths : undefined;
-  }
-
   private match(
     id: number,
     preemptible: boolean,
-    paths: string[],
+    target: WorkerTarget,
     query: SearchQuery,
     config: EngineConfig,
+    maxTotalMatches: number,
     token: vscode.CancellationToken,
-    onBatch: (files: FileResult[]) => void,
-    onComplete: (matchedPaths: string[]) => void
+    onBatch: (files: FileResult[]) => void
   ): Promise<SearchStats> {
-    const request: WorkerSearchRequest = {
+    const worker = this.ensureWorker();
+    // 바뀐 미저장 내용만 보낸다. 메시지 순서가 보장되므로 검색보다 먼저 반영된다.
+    const dirty = this.dirtyTexts.changes(vscode.workspace.textDocuments);
+    if (dirty) {
+      worker.postMessage({ type: 'dirty', ...dirty } satisfies WorkerRequest);
+    }
+    const request: WorkerSearchMessage = {
       type: 'search',
       id,
       preemptible,
-      paths,
-      dirty: collectDirtyTexts(paths, vscode.workspace.textDocuments),
+      ...target,
       pattern: query.query,
       regex: query.regex,
       caseSensitive: query.caseSensitive,
       wholeWord: query.wholeWord,
       maxBytes: config.maxFileSizeKb * 1024,
       maxMatchesPerFile: config.maxMatchesPerFile,
-      maxResultFiles: config.maxResultFiles
+      maxResultFiles: config.maxResultFiles,
+      maxTotalMatches,
+      freshMs: FRESH_MS
     };
 
     return new Promise<SearchStats>((resolve, reject) => {
       const stats: SearchStats = { fileCount: 0, matchCount: 0, truncated: false };
-      const matchedPaths: string[] = [];
-      const cleanup = () => {
-        this.pending.delete(id);
-        clearTimeout(timer);
-        cancelSubscription.dispose();
-      };
-      const timer = setTimeout(() => {
-        // 멈추지 않는 정규식은 워커째 버린다. 보관하던 내용은 다음 검색에서 다시 읽는다.
+      const onTimeout = () => {
+        // 멈추지 않는 정규식은 워커째 버린다. 보관하던 내용은 새 워커가 프로젝트 캐시에서 다시 읽는다.
         this.resetWorker(
           new Error(
             '검색이 너무 오래 걸려 중단했습니다. 정규식이 지나치게 복잡하지 않은지 확인해 주세요. ' +
               '(예: (a+)+ 처럼 수량자가 중첩된 패턴)'
           )
         );
-      }, SEARCH_TIMEOUT_MS);
+        if (!this.disposed) {
+          void this.startIndexing();
+        }
+      };
+      let timer = setTimeout(onTimeout, SEARCH_TIMEOUT_MS);
+      const cleanup = () => {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        cancelSubscription.dispose();
+      };
       const cancelSubscription = token.onCancellationRequested(() => {
         // 새 검색이 이미 id 를 바꿨다면 그대로 둔다.
         Atomics.compareExchange(this.currentSearch, 0, id, 0);
@@ -460,13 +482,13 @@ export class SearchEngine implements vscode.Disposable {
       });
       this.pending.set(id, {
         stats,
-        matchedPaths,
+        touch: () => {
+          clearTimeout(timer);
+          timer = setTimeout(onTimeout, SEARCH_TIMEOUT_MS);
+        },
         onBatch,
         resolve: (result) => {
           cleanup();
-          if (!result.truncated) {
-            onComplete(matchedPaths);
-          }
           resolve(result);
         },
         reject: (error) => {
@@ -474,13 +496,22 @@ export class SearchEngine implements vscode.Disposable {
           reject(error);
         }
       });
-      this.ensureWorker().postMessage(request);
+      worker.postMessage(request);
     });
   }
 
   private onWorkerMessage(message: WorkerMessage): void {
+    // 워커가 응답하면 멈춘 것이 아니다. 앞선 검색 뒤에서 기다리는 검색의 시간 제한도 다시 시작한다.
+    for (const waiting of this.pending.values()) {
+      waiting.touch();
+    }
+    if (message.type === 'warmed') {
+      this.warming.get(message.id)?.();
+      this.warming.delete(message.id);
+      return;
+    }
     const pending = this.pending.get(message.id);
-    if (!pending) {
+    if (!pending || message.type === 'progress') {
       return;
     }
     if (message.type === 'batch') {
@@ -488,7 +519,6 @@ export class SearchEngine implements vscode.Disposable {
       pending.stats.fileCount += results.length;
       for (const file of message.files) {
         pending.stats.matchCount += file.matches.length;
-        pending.matchedPaths.push(file.fsPath);
       }
       pending.onBatch(results);
     } else if (message.type === 'done') {
@@ -504,7 +534,7 @@ export class SearchEngine implements vscode.Disposable {
     if (this.worker) {
       return this.worker;
     }
-    const options: WorkerOptions = { currentSearch: this.currentSearch.buffer as SharedArrayBuffer, cacheBytes: CONTENT_CACHE_BYTES };
+    const options: WorkerOptions = { currentSearch: this.currentSearch.buffer as SharedArrayBuffer, cacheBytes: CONTENT_CACHE_BYTES, cacheRoots: this.cacheRoots() };
     const worker = new Worker(path.join(__dirname, 'searchWorker.js'), { workerData: options });
     worker.on('message', (message: WorkerMessage) => this.onWorkerMessage(message));
     worker.on('error', (error: Error) => {
@@ -518,13 +548,17 @@ export class SearchEngine implements vscode.Disposable {
       }
     });
     this.worker = worker;
+    // 새 워커는 파일 목록과 미저장 내용을 모른다.
+    this.dirtyTexts.reset();
+    if (this.workspacePaths) {
+      worker.postMessage({ type: 'files', paths: [...this.workspacePaths] } satisfies WorkerRequest);
+    }
     return worker;
   }
 
   private resetWorker(error: Error): void {
     const worker = this.worker;
     this.worker = undefined;
-    this.previous = undefined;
     void worker?.terminate();
     this.rejectPending(error);
   }
@@ -533,139 +567,125 @@ export class SearchEngine implements vscode.Disposable {
     for (const pending of [...this.pending.values()]) {
       pending.reject(error);
     }
-  }
-
-  private watch(watcher: vscode.FileSystemWatcher): vscode.Disposable[] {
-    return [
-      watcher.onDidCreate(() => this.dropFileLists()),
-      watcher.onDidDelete((uri) => {
-        this.dropFileLists();
-        this.invalidate(uri);
-      }),
-      watcher.onDidChange((uri) => this.invalidate(uri))
-    ];
+    for (const resolve of this.warming.values()) {
+      resolve();
+    }
+    this.warming.clear();
   }
 
   private invalidate(uri: vscode.Uri): void {
-    this.previous = undefined;
-    if (uri.scheme === 'file') {
-      const request: WorkerRequest = { type: 'invalidate', paths: [uri.fsPath] };
+    if (uri.scheme === 'file' && !uri.path.includes('/.vshoon/cache/')) {
+      this.changedPaths.delete(uri.fsPath);
+      const paths = [uri.fsPath];
+      // 목록에 있던 파일이면 그 항목만 지운다. 파일마다 전체 목록을 훑으면 대량 삭제(clean, checkout)가 느려진다.
+      if (this.workspacePaths && !this.workspacePaths.delete(uri.fsPath)) {
+        // 폴더가 지워지면 하위 파일의 이벤트가 따로 오지 않을 수 있다. 하위 파일의 캐시도 함께 버린다.
+        const prefix = uri.fsPath + path.sep;
+        for (const filePath of this.workspacePaths) {
+          if (filePath.startsWith(prefix)) {
+            this.workspacePaths.delete(filePath);
+            this.changedPaths.delete(filePath);
+            paths.push(filePath);
+          }
+        }
+      }
+      const request: WorkerRequest = { type: 'invalidate', paths };
       this.worker?.postMessage(request);
     }
   }
 
-  private dropFileLists(): void {
-    this.previous = undefined;
-    for (const entry of this.fileLists.values()) {
-      entry.watcher?.dispose();
-    }
-    this.fileLists.clear();
+  private cacheRoots(): string[] {
+    return (vscode.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === 'file').map(folder => folder.uri.fsPath);
   }
 
-  /** 범위의 파일 목록을 돌려준다. 검색이 취소되면 목록을 기다리지 않고 undefined 를 돌려준다. */
-  private getFileList(query: SearchQuery, config: EngineConfig, token: undefined): Promise<FileList>;
-  private getFileList(query: SearchQuery, config: EngineConfig, token: vscode.CancellationToken): Promise<FileList | undefined>;
-  private async getFileList(query: SearchQuery, config: EngineConfig, token: vscode.CancellationToken | undefined): Promise<FileList | undefined> {
-    const key = fileListKey(query, config);
-    let entry = this.fileLists.get(key);
-    if (entry) {
-      // 최근에 쓴 범위를 뒤로 보내 먼저 밀려나지 않게 한다.
-      this.fileLists.delete(key);
-      this.fileLists.set(key, entry);
-    } else {
-      entry = { list: this.buildFileList(query, config), refreshing: false, watcher: this.createOutsideWatcher(query) };
-      this.fileLists.set(key, entry);
-      while (this.fileLists.size > FILE_LIST_CACHE_SIZE) {
-        const oldestKey = this.fileLists.keys().next().value as string;
-        this.fileLists.get(oldestKey)?.watcher?.dispose();
-        this.fileLists.delete(oldestKey);
+  private isIndexable(uri: vscode.Uri): boolean {
+    return !this.disposed && uri.scheme === 'file' && !uri.path.includes('/.vshoon/cache/') && !isAsar(uri.path)
+      && !isInSkippedDirectory(uri.fsPath, this.cacheRoots());
+  }
+
+  private refresh(uri: vscode.Uri): void {
+    if (!this.isIndexable(uri)) {
+      return;
+    }
+    this.changedPaths.add(uri.fsPath);
+    if (this.changeTimer) {
+      return;
+    }
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = undefined;
+      const paths = [...this.changedPaths];
+      this.changedPaths.clear();
+      if (!this.disposed && paths.length > 0) {
+        this.ensureWorker().postMessage({ type: 'refresh', paths, maxBytes: getConfig().maxFileSizeKb * 1024 } satisfies WorkerRequest);
+      }
+    }, 100);
+  }
+
+  /**
+   * 검색 대상을 정한다. 워크스페이스 목록으로 처리할 수 있으면 워커가 보관한 목록을 거르는 조건만 보내고,
+   * 그렇지 않으면 findFiles 로 찾은 경로를 보낸다.
+   */
+  private async collectTarget(query: SearchQuery, config: EngineConfig, token: vscode.CancellationToken): Promise<WorkerTarget> {
+    const hasFilter = query.fileMask.trim().length > 0 || (query.scopeKind === 'directory' && query.scopePath.trim().length > 0);
+    if (!needsFileSearch(query)) {
+      if (!this.workspacePaths) {
+        // 열거가 끝나면 목록이 워커로 먼저 전달된다.
+        await this.enumerate(config);
+      }
+      if (this.workspacePaths && (!hasFilter || !this.workspaceTruncated)) {
+        return { scope: scopeOf(query) };
       }
     }
-    const current = entry;
-    let list: FileList | undefined;
-    try {
-      list = token ? await untilCancelled(current.list, token) : await current.list;
-    } catch (error) {
-      if (this.fileLists.get(key) === current) {
-        this.fileLists.delete(key);
-        current.watcher?.dispose();
-      }
-      throw error;
-    }
-    if (list && !current.refreshing && Date.now() - list.createdAt > FILE_LIST_REFRESH_MS) {
-      // 감시에서 빠진 폴더의 생성·삭제도 결국 반영되도록 뒤에서 목록을 다시 만든다.
-      current.refreshing = true;
-      const refreshed = this.buildFileList(query, config);
-      refreshed.then(
-        () => {
-          current.list = refreshed;
-          current.refreshing = false;
-        },
-        () => {
-          current.refreshing = false;
+    const files = await collectFiles(query, config, token);
+    return { paths: files.filter(uri => uri.scheme === 'file' && !isAsar(uri.path)).map(uri => uri.fsPath) };
+  }
+
+  /** 워크스페이스 전체 목록을 한 번 열거한다. 동시에 들어온 요청은 같은 결과를 기다린다. */
+  private enumerate(config: EngineConfig = getConfig()): Promise<Set<string>> {
+    if (!this.enumerating) {
+      // 목록을 초기화했으면 새 열거가 이미 자리를 차지하고 있으므로 지우지 않는다.
+      const generation = this.listGeneration;
+      this.enumerating = this.listWorkspace(config, generation).finally(() => {
+        if (generation === this.listGeneration) {
+          this.enumerating = undefined;
         }
-      );
+      });
     }
-    return list;
+    return this.enumerating;
   }
 
-  private async buildFileList(query: SearchQuery, config: EngineConfig): Promise<FileList> {
-    // 목록은 여러 검색이 함께 쓰므로 한 검색의 취소로 끊지 않는다.
+  private async listWorkspace(config: EngineConfig, generation: number): Promise<Set<string>> {
     const source = new vscode.CancellationTokenSource();
     try {
-      const createdAt = Date.now();
+      const query: SearchQuery = { id: 0, query: '', regex: false, caseSensitive: false, wholeWord: false, scopeKind: 'workspace', scopePath: '', recursive: true, fileMask: '' };
       const files = await collectFiles(query, config, source.token);
-      // 원격(file 스킴이 아닌) 파일은 워커의 node fs 로 읽을 수 없어 대상에서 뺀다.
-      const paths = files.filter((uri) => uri.scheme === 'file' && !isAsar(uri.path)).map((uri) => uri.fsPath);
-      return { paths, createdAt };
+      const paths = new Set(files.filter(uri => uri.scheme === 'file' && !isAsar(uri.path)).map(uri => uri.fsPath));
+      if (generation === this.listGeneration && !this.disposed) {
+        this.workspacePaths = paths;
+        this.workspaceTruncated = files.length >= config.maxFiles;
+        this.worker?.postMessage({ type: 'files', paths: [...paths] } satisfies WorkerRequest);
+      }
+      return paths;
     } finally {
       source.dispose();
     }
   }
 
-  /** 워크스페이스 밖 디렉터리는 워크스페이스 감시에 들어가지 않으므로 따로 감시한다. */
-  private createOutsideWatcher(query: SearchQuery): vscode.Disposable | undefined {
-    if (query.scopeKind !== 'directory' || query.scopePath.trim().length === 0 || isInsideWorkspace(query.scopePath)) {
-      return undefined;
-    }
-    const base = vscode.Uri.file(path.resolve(query.scopePath));
-    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(base, query.recursive ? '**/*' : '*'));
-    const disposables = [watcher, ...this.watch(watcher)];
-    return new vscode.Disposable(() => disposables.forEach((disposable) => disposable.dispose()));
-  }
-}
-
-function fileListKey(query: SearchQuery, config: EngineConfig): string {
-  const useDirectory = query.scopeKind === 'directory' && query.scopePath.trim().length > 0;
-  return JSON.stringify([
-    useDirectory ? path.resolve(query.scopePath) : '',
-    query.recursive,
-    query.fileMask.trim(),
-    config.maxFiles,
-    config.excludeGlobs
-  ]);
-}
-
-/** 토큰이 취소되면 promise 를 기다리지 않고 undefined 로 끝낸다. */
-function untilCancelled<T>(promise: Promise<T>, token: vscode.CancellationToken): Promise<T | undefined> {
-  if (token.isCancellationRequested) {
-    return Promise.resolve(undefined);
-  }
-  return new Promise<T | undefined>((resolve, reject) => {
-    const subscription = token.onCancellationRequested(() => {
-      subscription.dispose();
-      resolve(undefined);
-    });
-    promise.then(
-      (value) => {
-        subscription.dispose();
-        resolve(value);
-      },
-      (error) => {
-        subscription.dispose();
-        reject(error);
+  private scheduleEnumerate(delay = ENUMERATE_DELAY_MS): void {
+    clearTimeout(this.enumerateTimer);
+    this.enumerateTimer = setTimeout(() => {
+      this.enumerateTimer = undefined;
+      if (!this.disposed) {
+        this.enumerate().catch(() => undefined);
       }
-    );
-  });
+    }, delay);
+  }
+
+  private resetFileList(): void {
+    this.listGeneration++;
+    this.workspacePaths = undefined;
+    this.enumerating = undefined;
+    clearTimeout(this.enumerateTimer);
+  }
 }
 
